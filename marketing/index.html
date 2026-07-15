@@ -1,0 +1,1847 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Renewl — Never miss a vendor renewal again</title>
+    <meta
+      name="description"
+      content="Renewl alerts your ops team before vendor contracts auto-renew — so you negotiate, not panic."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      /* ── Variables ── */
+      :root {
+        --bg: #07090f;
+        --surface: #0d1018;
+        --surface-2: #121622;
+        --border: #191d2b;
+        --border-mid: #1f2537;
+        --border-hi: #2a3148;
+        --accent: #10B981;
+        --accent-dim: rgba(16, 185, 129, 0.1);
+        --accent-glow: rgba(16, 185, 129, 0.2);
+        --amber: #e8a820;
+        --danger: #e04848;
+        --text: #dde1ee;
+        --text-2: #9ba4bf;
+        --muted: #56607a;
+        --white: #edf0fa;
+
+        --display: "DM Serif Display", Georgia, serif;
+        --mono: "JetBrains Mono", "Courier New", monospace;
+        --body: "Source Serif 4", Georgia, serif;
+
+        --w: 1100px;
+        --px: 48px;
+      }
+
+      /* ── Reset ── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--body);
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+
+      /* Film-grain overlay */
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.045'/%3E%3C/svg%3E");
+        pointer-events: none;
+        z-index: 9999;
+        opacity: 0.4;
+      }
+
+      /* ── Layout ── */
+      .wrap {
+        max-width: var(--w);
+        margin: 0 auto;
+        padding: 0 var(--px);
+      }
+
+      /* ── Keyframes ── */
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(22px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes blink {
+        0%,
+        49% {
+          opacity: 1;
+        }
+        50%,
+        99% {
+          opacity: 0.25;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+      @keyframes scanline {
+        0% {
+          transform: translateY(-100%);
+        }
+        100% {
+          transform: translateY(400%);
+        }
+      }
+      @keyframes pulseDot {
+        0%,
+        100% {
+          box-shadow: 0 0 0 0 rgba(224, 72, 72, 0.5);
+        }
+        50% {
+          box-shadow: 0 0 0 5px rgba(224, 72, 72, 0);
+        }
+      }
+
+      /* ── Reveal on scroll ── */
+      .reveal {
+        opacity: 0;
+        transform: translateY(26px);
+        transition:
+          opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
+          transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .reveal.in {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      /* ── NAV ── */
+      nav {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background: rgba(7, 9, 15, 0.88);
+        backdrop-filter: blur(14px);
+        border-bottom: 1px solid var(--border);
+        animation: fadeIn 0.5s ease;
+      }
+      .nav-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 58px;
+      }
+      .logo {
+        font-family: var(--mono);
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: -0.015em;
+        text-decoration: none;
+      }
+      .logo::before {
+        content: "▸ ";
+        opacity: 0.55;
+        font-size: 0.8em;
+      }
+
+      /* ── Buttons ── */
+      .btn-outline {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        border: 1px solid var(--accent);
+        background: transparent;
+        padding: 8px 20px;
+        cursor: pointer;
+        text-decoration: none;
+        transition:
+          background 0.18s,
+          color 0.18s;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .btn-outline:hover {
+        background: var(--accent);
+        color: var(--bg);
+      }
+
+      .btn-solid {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--bg);
+        background: var(--accent);
+        border: 1px solid var(--accent);
+        padding: 13px 28px;
+        cursor: pointer;
+        transition:
+          opacity 0.18s,
+          transform 0.15s;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        white-space: nowrap;
+      }
+      .btn-solid:hover {
+        opacity: 0.87;
+        transform: translateY(-1px);
+      }
+
+      /* ── Section label ── */
+      .tag {
+        font-family: var(--mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      .tag::before {
+        content: "";
+        display: block;
+        width: 22px;
+        height: 1px;
+        background: var(--accent);
+      }
+
+      h2 {
+        font-family: var(--display);
+        font-size: clamp(2rem, 3.2vw, 2.85rem);
+        line-height: 1.13;
+        color: var(--white);
+        letter-spacing: -0.012em;
+      }
+
+      .divider {
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          var(--border-mid) 25%,
+          var(--border-mid) 75%,
+          transparent 100%
+        );
+      }
+
+      /* ═══════════════════════════════════════════
+       HERO
+    ═══════════════════════════════════════════ */
+      .hero {
+        padding: 96px 0 80px;
+        position: relative;
+        overflow: hidden;
+      }
+      .hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(var(--border) 1px, transparent 1px),
+          linear-gradient(90deg, var(--border) 1px, transparent 1px);
+        background-size: 72px 72px;
+        opacity: 0.2;
+        pointer-events: none;
+      }
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          ellipse 80% 70% at 50% 0%,
+          transparent 0%,
+          var(--bg) 100%
+        );
+        pointer-events: none;
+      }
+
+      .hero-inner {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 80px;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+      }
+
+      .hero-tag {
+        font-family: var(--mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 22px;
+        animation: fadeUp 0.55s ease 0.1s both;
+      }
+      .hero-tag::before {
+        content: "";
+        display: block;
+        width: 22px;
+        height: 1px;
+        background: var(--accent);
+      }
+
+      .hero h1 {
+        font-family: var(--display);
+        font-size: clamp(2.4rem, 4.2vw, 3.7rem);
+        line-height: 1.1;
+        color: var(--white);
+        letter-spacing: -0.015em;
+        margin-bottom: 22px;
+        animation: fadeUp 0.55s ease 0.18s both;
+      }
+
+      .hero-sub {
+        font-size: 1.05rem;
+        color: var(--text-2);
+        line-height: 1.72;
+        margin-bottom: 36px;
+        max-width: 460px;
+        animation: fadeUp 0.55s ease 0.26s both;
+      }
+
+      .email-row {
+        display: flex;
+        gap: 0;
+        margin-bottom: 14px;
+        animation: fadeUp 0.55s ease 0.34s both;
+      }
+      .email-row input[type="email"] {
+        flex: 1;
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border-hi);
+        border-right: none;
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        padding: 13px 18px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .email-row input[type="email"]::placeholder {
+        color: var(--muted);
+      }
+      .email-row input[type="email"]:focus {
+        border-color: var(--accent);
+      }
+
+      .social-proof {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        color: var(--muted);
+        letter-spacing: 0.04em;
+        animation: fadeUp 0.55s ease 0.42s both;
+      }
+      .social-proof b {
+        color: var(--accent);
+        font-weight: 500;
+      }
+
+      .success-msg {
+        display: none;
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        color: var(--accent);
+        letter-spacing: 0.02em;
+        padding: 14px 20px;
+        border: 1px solid var(--accent-glow);
+        background: var(--accent-dim);
+        margin-bottom: 14px;
+      }
+      .success-msg::before {
+        content: "✓  ";
+      }
+
+      /* ═══════════════════════════════════════════
+       CONTRACT CARD
+    ═══════════════════════════════════════════ */
+      .card-wrap {
+        animation: fadeUp 0.65s ease 0.3s both;
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border-hi);
+        padding: 28px 28px 24px;
+        position: relative;
+        overflow: hidden;
+      }
+      .card::before,
+      .card::after {
+        content: "";
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        border-style: solid;
+        border-color: var(--accent);
+      }
+      .card::before {
+        top: -1px;
+        left: -1px;
+        border-width: 2px 0 0 2px;
+      }
+      .card::after {
+        bottom: -1px;
+        right: -1px;
+        border-width: 0 2px 2px 0;
+      }
+
+      .card-scanline {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 60px;
+        background: linear-gradient(
+          180deg,
+          rgba(0, 201, 160, 0.04) 0%,
+          transparent 100%
+        );
+        animation: scanline 5s linear infinite;
+        pointer-events: none;
+      }
+
+      .card-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 20px;
+      }
+      .card-vendor-lbl {
+        font-family: var(--mono);
+        font-size: 0.6rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .card-vendor-name {
+        font-family: var(--display);
+        font-size: 1.45rem;
+        color: var(--white);
+        line-height: 1.1;
+      }
+      .card-type {
+        font-family: var(--mono);
+        font-size: 0.62rem;
+        color: var(--muted);
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        margin-top: 3px;
+      }
+      .card-badge {
+        font-family: var(--mono);
+        font-size: 0.6rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding: 4px 9px;
+        border: 1px solid var(--amber);
+        color: var(--amber);
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      .card-meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px 20px;
+        margin-bottom: 20px;
+      }
+      .meta-lbl {
+        font-family: var(--mono);
+        font-size: 0.58rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        display: block;
+        margin-bottom: 3px;
+      }
+      .meta-val {
+        font-family: var(--mono);
+        font-size: 0.88rem;
+        color: var(--text);
+      }
+      .meta-val.good {
+        color: var(--accent);
+      }
+
+      .expiry-block {
+        padding: 14px 0;
+        border-top: 1px solid var(--border);
+        margin-bottom: 20px;
+      }
+      .expiry-lbl {
+        font-family: var(--mono);
+        font-size: 0.58rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .expiry-date {
+        font-family: var(--mono);
+        font-size: 1.55rem;
+        color: var(--danger);
+        letter-spacing: 0.02em;
+        margin-bottom: 12px;
+        font-weight: 700;
+      }
+      .prog-track {
+        height: 2px;
+        background: var(--border-hi);
+        margin-bottom: 6px;
+      }
+      .prog-fill {
+        height: 100%;
+        width: 72%;
+        background: linear-gradient(
+          90deg,
+          var(--accent) 0%,
+          var(--amber) 70%,
+          var(--danger) 100%
+        );
+        transition: width 1s ease;
+      }
+      .prog-labels {
+        display: flex;
+        justify-content: space-between;
+        font-family: var(--mono);
+        font-size: 0.58rem;
+        color: var(--muted);
+      }
+
+      .countdown-block {
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid var(--border);
+        padding: 18px 20px;
+        position: relative;
+        overflow: hidden;
+      }
+      .cd-lbl {
+        font-family: var(--mono);
+        font-size: 0.58rem;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 10px;
+      }
+      .cd-display {
+        display: flex;
+        align-items: flex-end;
+        gap: 3px;
+        font-family: var(--mono);
+      }
+      .cd-seg {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .cd-num {
+        font-size: 2.3rem;
+        font-weight: 700;
+        color: var(--white);
+        line-height: 1;
+        letter-spacing: -0.03em;
+        min-width: 2.4ch;
+        text-align: center;
+      }
+      .cd-unit {
+        font-size: 0.55rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-top: 5px;
+      }
+      .cd-sep {
+        font-size: 1.9rem;
+        color: var(--border-hi);
+        font-weight: 300;
+        padding-bottom: 2px;
+        animation: blink 1s step-end infinite;
+      }
+      .cd-status {
+        font-family: var(--mono);
+        font-size: 0.62rem;
+        color: var(--danger);
+        letter-spacing: 0.06em;
+        margin-top: 10px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .dot-live {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--danger);
+        animation: pulseDot 1.4s ease infinite;
+      }
+
+      .card-foot {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+        font-family: var(--mono);
+        font-size: 0.6rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        flex-wrap: wrap;
+      }
+      .auto-badge {
+        color: var(--amber);
+      }
+      .auto-badge::before {
+        content: "⚠ ";
+        font-size: 0.7em;
+      }
+
+      /* ═══════════════════════════════════════════
+       PAIN SECTION
+    ═══════════════════════════════════════════ */
+      .pain {
+        background: var(--surface);
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+        padding: 96px 0;
+      }
+      .pain h2 {
+        margin-bottom: 12px;
+      }
+      .pain-intro {
+        font-size: 1rem;
+        color: var(--text-2);
+        line-height: 1.7;
+        margin-bottom: 52px;
+        max-width: 540px;
+      }
+      .incident-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+      }
+      .incident {
+        background: var(--bg);
+        border: 1px solid rgba(224, 72, 72, 0.3);
+        border-left: 3px solid var(--danger);
+        padding: 28px 30px;
+      }
+      .incident-id {
+        font-family: var(--mono);
+        font-size: 0.58rem;
+        color: var(--danger);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        opacity: 0.7;
+        margin-bottom: 12px;
+      }
+      .incident-amt {
+        font-family: var(--mono);
+        font-size: 3.2rem;
+        font-weight: 700;
+        color: var(--danger);
+        line-height: 1;
+        letter-spacing: -0.03em;
+        margin-bottom: 16px;
+      }
+      .incident-desc {
+        font-size: 0.9rem;
+        color: var(--text-2);
+        line-height: 1.65;
+      }
+      .incident-tag {
+        font-family: var(--mono);
+        font-size: 0.58rem;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--danger);
+        opacity: 0.55;
+        margin-top: 16px;
+      }
+
+      /* ═══════════════════════════════════════════
+       HOW IT WORKS
+    ═══════════════════════════════════════════ */
+      .hiw {
+        padding: 96px 0;
+      }
+      .steps {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 0;
+        margin-top: 56px;
+        position: relative;
+      }
+      .steps::before {
+        content: "";
+        position: absolute;
+        top: 23px;
+        left: calc(33.33% / 2);
+        right: calc(33.33% / 2);
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          var(--accent),
+          var(--border-hi),
+          var(--accent)
+        );
+      }
+      .step {
+        padding-right: 48px;
+      }
+      .step:last-child {
+        padding-right: 0;
+      }
+      .step-num {
+        font-family: var(--mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.1em;
+        color: var(--accent);
+        width: 46px;
+        height: 46px;
+        border: 1px solid var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--accent-dim);
+        margin-bottom: 22px;
+      }
+      .step-title {
+        font-family: var(--display);
+        font-size: 1.25rem;
+        color: var(--white);
+        margin-bottom: 10px;
+      }
+      .step-desc {
+        font-size: 0.88rem;
+        color: var(--text-2);
+        line-height: 1.65;
+      }
+
+      /* ═══════════════════════════════════════════
+       FEATURES
+    ═══════════════════════════════════════════ */
+      .features {
+        background: var(--surface);
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+        padding: 96px 0;
+      }
+      .feat-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        margin-top: 52px;
+      }
+      .feat {
+        padding: 26px 0;
+        border-bottom: 1px solid var(--border);
+        display: grid;
+        grid-template-columns: 34px 1fr;
+        gap: 16px;
+        align-items: start;
+      }
+      .feat:nth-child(odd) {
+        padding-right: 52px;
+        border-right: 1px solid var(--border);
+      }
+      .feat:nth-child(even) {
+        padding-left: 52px;
+      }
+      .feat:nth-last-child(-n + 2) {
+        border-bottom: none;
+      }
+      .feat-icon {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        color: var(--accent);
+        width: 34px;
+        height: 34px;
+        border: 1px solid var(--border-hi);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        letter-spacing: 0;
+      }
+      .feat-title {
+        font-family: var(--display);
+        font-size: 1.05rem;
+        color: var(--white);
+        margin-bottom: 5px;
+      }
+      .feat-desc {
+        font-size: 0.85rem;
+        color: var(--text-2);
+        line-height: 1.6;
+      }
+
+      /* ═══════════════════════════════════════════
+       PRICING
+    ═══════════════════════════════════════════ */
+      .pricing {
+        padding: 96px 0;
+      }
+      .plans {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 28px;
+        margin-top: 52px;
+      }
+      .plan {
+        border: 1px solid var(--border-hi);
+        padding: 36px;
+        position: relative;
+      }
+      .plan-pro {
+        border-color: var(--accent);
+      }
+      .plan-pro::before {
+        content: "RECOMMENDED";
+        position: absolute;
+        top: -10px;
+        left: 28px;
+        background: var(--bg);
+        padding: 0 8px;
+        font-family: var(--mono);
+        font-size: 0.58rem;
+        letter-spacing: 0.12em;
+        color: var(--accent);
+      }
+      .plan-name {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 14px;
+      }
+      .plan-price {
+        font-family: var(--display);
+        font-size: 3.4rem;
+        color: var(--white);
+        line-height: 1;
+        margin-bottom: 4px;
+      }
+      .plan-price sup {
+        font-family: var(--mono);
+        font-size: 1.3rem;
+        vertical-align: super;
+        color: var(--text-2);
+      }
+      .plan-cadence {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        color: var(--muted);
+        margin-bottom: 28px;
+        letter-spacing: 0.04em;
+      }
+      .plan-rule {
+        height: 1px;
+        background: var(--border);
+        margin-bottom: 22px;
+      }
+      .plan-list {
+        list-style: none;
+        margin-bottom: 32px;
+      }
+      .plan-list li {
+        font-size: 0.875rem;
+        color: var(--text-2);
+        padding: 7px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .plan-list li::before {
+        content: "—";
+        font-family: var(--mono);
+        color: var(--accent);
+        flex-shrink: 0;
+        font-size: 0.78rem;
+        margin-top: 1px;
+      }
+      .pricing-note {
+        text-align: center;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--muted);
+        letter-spacing: 0.04em;
+        margin-top: 20px;
+      }
+
+      /* ═══════════════════════════════════════════
+       FINAL CTA
+    ═══════════════════════════════════════════ */
+      .final-cta {
+        padding: 96px 0;
+        text-align: center;
+      }
+      .final-cta .tag {
+        justify-content: center;
+      }
+      .final-cta .tag::before {
+        display: none;
+      }
+      .final-cta h2 {
+        margin-bottom: 14px;
+      }
+      .cta-body {
+        font-size: 1rem;
+        color: var(--text-2);
+        margin-bottom: 40px;
+        line-height: 1.7;
+      }
+      .cta-form {
+        display: flex;
+        gap: 0;
+        max-width: 440px;
+        margin: 0 auto 14px;
+      }
+      .cta-form input[type="email"] {
+        flex: 1;
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border-hi);
+        border-right: none;
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        padding: 13px 18px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .cta-form input[type="email"]::placeholder {
+        color: var(--muted);
+      }
+      .cta-form input[type="email"]:focus {
+        border-color: var(--accent);
+      }
+      .cta-social {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        color: var(--muted);
+        letter-spacing: 0.04em;
+      }
+
+      /* ═══════════════════════════════════════════
+       FOOTER
+    ═══════════════════════════════════════════ */
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 28px 0;
+      }
+      .foot-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .foot-copy {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        color: var(--muted);
+        letter-spacing: 0.03em;
+      }
+      .foot-note {
+        font-size: 0.82rem;
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      /* ═══════════════════════════════════════════
+       MOBILE
+    ═══════════════════════════════════════════ */
+      @media (max-width: 768px) {
+        :root {
+          --px: 22px;
+        }
+
+        .hero {
+          padding: 60px 0 52px;
+        }
+        .hero-inner {
+          grid-template-columns: 1fr;
+          gap: 48px;
+        }
+        .hero h1 {
+          font-size: 2.3rem;
+        }
+
+        .email-row {
+          flex-direction: column;
+        }
+        .email-row input[type="email"] {
+          border-right: 1px solid var(--border-hi);
+          border-bottom: none;
+        }
+
+        .cta-form {
+          flex-direction: column;
+        }
+        .cta-form input[type="email"] {
+          border-right: 1px solid var(--border-hi);
+          border-bottom: none;
+        }
+
+        .incident-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .steps {
+          grid-template-columns: 1fr;
+          gap: 40px;
+        }
+        .steps::before {
+          display: none;
+        }
+        .step {
+          padding-right: 0;
+        }
+
+        .feat-grid {
+          grid-template-columns: 1fr;
+        }
+        .feat:nth-child(odd) {
+          padding-right: 0;
+          border-right: none;
+        }
+        .feat:nth-child(even) {
+          padding-left: 0;
+        }
+        .feat:nth-last-child(-n + 2) {
+          border-bottom: 1px solid var(--border);
+        }
+        .feat:last-child {
+          border-bottom: none;
+        }
+
+        .plans {
+          grid-template-columns: 1fr;
+        }
+
+        .foot-inner {
+          flex-direction: column;
+          gap: 10px;
+          text-align: center;
+        }
+
+        /* gap fixes: mobile overrides */
+        .step-num-wrap {
+          margin-left: 0 !important;
+        }
+        .plan-pro {
+          transform: none !important;
+        }
+      }
+
+      /* ═══════════════════════════════════════════
+       GAP FIXES — spatial, hover, depth, reveal
+      ═══════════════════════════════════════════ */
+
+      /* ── GAP 1: Spatial composition ── */
+
+      /* Pain section: ghosted "01" behind heading */
+      .pain {
+        position: relative;
+        overflow: hidden;
+      }
+      .pain::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          ellipse 60% 55% at 50% 85%,
+          rgba(224, 72, 72, 0.06) 0%,
+          transparent 100%
+        );
+        pointer-events: none;
+        z-index: 0;
+      }
+      .pain .wrap {
+        position: relative;
+        z-index: 1;
+      }
+      .pain-ghost {
+        position: absolute;
+        top: -0.15em;
+        left: -0.05em;
+        font-family: var(--display);
+        font-size: clamp(8rem, 14vw, 14rem);
+        color: var(--danger);
+        opacity: 0.04;
+        line-height: 1;
+        pointer-events: none;
+        user-select: none;
+        z-index: 0;
+      }
+      .pain-header {
+        position: relative;
+      }
+
+      /* Steps: number bleeds into left gutter */
+      .step-num-wrap {
+        display: inline-flex;
+        margin-left: -24px;
+      }
+
+      /* Features: vertical stagger between rows */
+      .feat:nth-child(4n + 3),
+      .feat:nth-child(4n + 4) {
+        padding-top: 36px;
+      }
+
+      /* Pricing: pro card lifts up */
+      .plan-pro {
+        transform: translateY(-10px);
+        transition:
+          transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+          box-shadow 0.25s ease;
+      }
+
+      /* ── GAP 2: Hover states ── */
+
+      /* Incident cards */
+      .incident {
+        transition:
+          border-color 0.2s ease,
+          background 0.2s ease;
+        cursor: default;
+      }
+      .incident:hover {
+        border-left-color: var(--danger);
+        background: rgba(224, 72, 72, 0.04);
+      }
+      .incident:hover .incident-amt {
+        text-shadow: 0 0 32px rgba(224, 72, 72, 0.45);
+      }
+      .incident-amt {
+        transition: text-shadow 0.2s ease;
+      }
+
+      /* Feature items */
+      .feat {
+        transition: background 0.2s ease;
+        cursor: default;
+      }
+      .feat-icon-wrap {
+        width: 34px;
+        height: 34px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition:
+          border-color 0.2s ease,
+          background 0.2s ease,
+          transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .feat-content {
+        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .feat:hover .feat-icon-wrap {
+        border-color: var(--accent);
+        background: var(--accent-dim);
+        transform: scale(1.08);
+      }
+      .feat:hover .feat-content {
+        transform: translateX(4px);
+      }
+
+      /* Step numbers */
+      .step {
+        transition: background 0.2s ease;
+        cursor: default;
+      }
+      .step-num {
+        transition:
+          border-color 0.2s ease,
+          background 0.2s ease,
+          transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .step-title {
+        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .step:hover .step-num {
+        border-color: var(--accent);
+        background: var(--accent-dim);
+        transform: scale(1.06);
+      }
+      .step:hover .step-title {
+        transform: translateX(3px);
+      }
+
+      /* Pricing plan cards */
+      .plan {
+        transition:
+          transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+          box-shadow 0.25s ease;
+        cursor: default;
+      }
+      .plan:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+      }
+      .plan-pro:hover {
+        transform: translateY(-14px);
+        box-shadow:
+          0 16px 48px rgba(0, 0, 0, 0.45),
+          0 0 0 1px rgba(0, 201, 160, 0.35),
+          0 0 32px rgba(0, 201, 160, 0.08);
+      }
+
+      /* ── GAP 3: Background depth ── */
+
+      /* How It Works: diagonal stripe */
+      .hiw {
+        position: relative;
+        overflow: hidden;
+      }
+      .hiw::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: repeating-linear-gradient(
+          135deg,
+          var(--border) 0px,
+          var(--border) 1px,
+          transparent 1px,
+          transparent 52px
+        );
+        opacity: 0.08;
+        pointer-events: none;
+        z-index: 0;
+      }
+      .hiw .wrap {
+        position: relative;
+        z-index: 1;
+      }
+
+      /* Pricing: dot grid */
+      .pricing {
+        position: relative;
+        overflow: hidden;
+      }
+      .pricing::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(var(--border) 1px, transparent 1px),
+          linear-gradient(90deg, var(--border) 1px, transparent 1px);
+        background-size: 48px 48px;
+        opacity: 0.12;
+        pointer-events: none;
+        z-index: 0;
+      }
+      .pricing .wrap {
+        position: relative;
+        z-index: 1;
+      }
+
+      /* Final CTA: accent glow */
+      .final-cta {
+        position: relative;
+        overflow: hidden;
+      }
+      .final-cta::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          ellipse 55% 75% at 50% 50%,
+          rgba(0, 201, 160, 0.06) 0%,
+          transparent 100%
+        );
+        pointer-events: none;
+        z-index: 0;
+      }
+      .final-cta .wrap {
+        position: relative;
+        z-index: 1;
+      }
+
+      /* ── GAP 4: Reveal animations ── */
+
+      /* Override easing to snappy overshoot */
+      .reveal {
+        transition:
+          opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+          transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      /* Scale reveal for section blocks (applied via JS) */
+      .reveal[data-reveal="scale"] {
+        transform: scale(0.97);
+        opacity: 0;
+      }
+      .reveal[data-reveal="scale"].in {
+        transform: scale(1);
+        opacity: 1;
+      }
+
+      /* Left/right directional reveals */
+      .reveal[data-reveal="left"] {
+        transform: translateX(-20px);
+        opacity: 0;
+      }
+      .reveal[data-reveal="left"].in {
+        transform: translateX(0);
+        opacity: 1;
+      }
+      .reveal[data-reveal="right"] {
+        transform: translateX(20px);
+        opacity: 0;
+      }
+      .reveal[data-reveal="right"].in {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ── NAV ── -->
+    <nav>
+      <div class="wrap">
+        <div class="nav-inner">
+          <a href="#" class="logo">renewl</a>
+          <a href="#waitlist" class="btn-outline">Join waitlist</a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ── HERO ── -->
+    <section class="hero">
+      <div class="wrap">
+        <div class="hero-inner">
+          <!-- Left: copy + form -->
+          <div>
+            <div class="hero-tag">Contract intelligence</div>
+            <h1>Stop getting surprised by vendor renewals</h1>
+            <p class="hero-sub">
+              Upload your contracts once. Renewl extracts the key dates and
+              alerts you at 60, 30, and 7 days before anything expires or
+              auto-renews.
+            </p>
+
+            <form
+              class="email-row"
+              id="hero-form"
+              onsubmit="handleSubmit(event, 'hero-ok')"
+            >
+              <input
+                type="email"
+                placeholder="your@company.com"
+                required
+                autocomplete="email"
+              />
+              <button type="submit" class="btn-solid">
+                Get early access →
+              </button>
+            </form>
+            <div class="success-msg" id="hero-ok">
+              You're on the list. We'll be in touch.
+            </div>
+          </div>
+
+          <!-- Right: live contract card -->
+          <div class="card-wrap">
+            <div class="card">
+              <div class="card-scanline"></div>
+
+              <div class="card-head">
+                <div>
+                  <div class="card-vendor-lbl">Vendor</div>
+                  <div class="card-vendor-name">Salesforce Inc.</div>
+                  <div class="card-type">Enterprise License · SaaS</div>
+                </div>
+                <div class="card-badge">Auto-renews</div>
+              </div>
+
+              <div class="card-meta">
+                <div>
+                  <span class="meta-lbl">Effective Date</span>
+                  <span class="meta-val">21 Apr 2025</span>
+                </div>
+                <div>
+                  <span class="meta-lbl">Notice Period</span>
+                  <span class="meta-val">30 days</span>
+                </div>
+                <div>
+                  <span class="meta-lbl">Contract Value</span>
+                  <span class="meta-val">$48,000 / yr</span>
+                </div>
+                <div>
+                  <span class="meta-lbl">Confidence</span>
+                  <span class="meta-val good">97.4%</span>
+                </div>
+              </div>
+
+              <div class="expiry-block">
+                <div class="expiry-lbl">Expires</div>
+                <div class="expiry-date">20 APR 2026</div>
+                <div class="prog-track">
+                  <div class="prog-fill" id="prog-fill"></div>
+                </div>
+                <div class="prog-labels">
+                  <span>Start</span>
+                  <span id="prog-pct">—</span>
+                  <span>Expiry</span>
+                </div>
+              </div>
+
+              <div class="countdown-block">
+                <div class="card-scanline"></div>
+                <div class="cd-lbl">Time remaining</div>
+                <div class="cd-display">
+                  <div class="cd-seg">
+                    <div class="cd-num" id="cd-d">--</div>
+                    <div class="cd-unit">days</div>
+                  </div>
+                  <div class="cd-sep">:</div>
+                  <div class="cd-seg">
+                    <div class="cd-num" id="cd-h">--</div>
+                    <div class="cd-unit">hrs</div>
+                  </div>
+                  <div class="cd-sep">:</div>
+                  <div class="cd-seg">
+                    <div class="cd-num" id="cd-m">--</div>
+                    <div class="cd-unit">min</div>
+                  </div>
+                  <div class="cd-sep">:</div>
+                  <div class="cd-seg">
+                    <div class="cd-num" id="cd-s">--</div>
+                    <div class="cd-unit">sec</div>
+                  </div>
+                </div>
+                <div class="cd-status">
+                  <span class="dot-live"></span>
+                  ALERT ACTIVE · 7-DAY WARNING SCHEDULED
+                </div>
+              </div>
+
+              <div class="card-foot">
+                <span class="auto-badge">Auto-renew clause detected</span>
+                <span style="color: var(--border-hi)">·</span>
+                <span>Alerts: 60d ✓&nbsp; 30d ✓&nbsp; 7d ●</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ── PAIN ── -->
+    <section class="pain reveal" data-reveal="scale">
+      <div class="wrap">
+        <div class="pain-header">
+          <div class="pain-ghost">01</div>
+          <div class="tag">The problem</div>
+          <h2>Every growing company leaks money on missed renewals</h2>
+        </div>
+        <p class="pain-intro">
+          Most contract surprises aren't complicated. They're just invisible —
+          buried in inboxes, shared drives, and memory.
+        </p>
+
+        <div class="incident-grid">
+          <div class="incident reveal" data-reveal="left">
+            <div class="incident-id">[ERR] AUTO-RENEWAL · UNDETECTED</div>
+            <div class="incident-amt">$8,400</div>
+            <p class="incident-desc">
+              Charged for software your team stopped using. Auto-renewed because
+              nobody caught the 30-day notice window.
+            </p>
+            <div class="incident-tag">
+              → Contract confirmed renewal · No alert configured
+            </div>
+          </div>
+          <div
+            class="incident reveal"
+            data-reveal="right"
+            style="transition-delay: 0.1s"
+          >
+            <div class="incident-id">[ERR] NEGOTIATION WINDOW EXPIRED</div>
+            <div class="incident-amt">$12,000</div>
+            <p class="incident-desc">
+              AWS contract renewed at last year's rate. The negotiation window
+              came and went. You didn't know.
+            </p>
+            <div class="incident-tag">
+              → Notice period lapsed · No human review
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ── HOW IT WORKS ── -->
+    <section class="hiw reveal" data-reveal="scale">
+      <div class="wrap">
+        <div class="tag">The process</div>
+        <h2>From PDF to alert in under a minute</h2>
+
+        <div class="steps">
+          <div class="step reveal">
+            <div class="step-num-wrap"><div class="step-num">01</div></div>
+            <div class="step-title">Upload your contract</div>
+            <p class="step-desc">
+              Drag and drop any PDF — vendor agreements, SaaS subscriptions,
+              leases, consultant retainers. Any contract type.
+            </p>
+          </div>
+          <div class="step reveal" style="transition-delay: 0.1s">
+            <div class="step-num-wrap"><div class="step-num">02</div></div>
+            <div class="step-title">AI extracts the dates</div>
+            <p class="step-desc">
+              Expiry, renewal date, notice period, auto-renew clause — extracted
+              and confidence-scored. You confirm in 30 seconds.
+            </p>
+          </div>
+          <div class="step reveal" style="transition-delay: 0.2s">
+            <div class="step-num-wrap"><div class="step-num">03</div></div>
+            <div class="step-title">Get alerts before it matters</div>
+            <p class="step-desc">
+              Email and Slack at 60, 30, and 7 days before expiry. Delivered to
+              whoever needs to know.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ── FEATURES ── -->
+    <section class="features reveal" data-reveal="scale">
+      <div class="wrap">
+        <div class="tag">Capabilities</div>
+        <h2>Built for ops and finance — not lawyers</h2>
+
+        <div class="feat-grid">
+          <div class="feat reveal" data-reveal="left">
+            <div class="feat-icon-wrap feat-icon">AI</div>
+            <div class="feat-content">
+              <div class="feat-title">AI-powered extraction</div>
+              <p class="feat-desc">
+                Claude reads your contracts and pulls every key date — with a
+                confidence score per field so you know exactly what to verify.
+              </p>
+            </div>
+          </div>
+          <div
+            class="feat reveal"
+            data-reveal="right"
+            style="transition-delay: 0.05s"
+          >
+            <div class="feat-icon-wrap feat-icon">◎</div>
+            <div class="feat-content">
+              <div class="feat-title">Tiered alerts</div>
+              <p class="feat-desc">
+                Email and Slack notifications at 60, 30, and 7 days. Routed to
+                your inbox, your team channel, or both.
+              </p>
+            </div>
+          </div>
+          <div
+            class="feat reveal"
+            data-reveal="left"
+            style="transition-delay: 0.1s"
+          >
+            <div class="feat-icon-wrap feat-icon">≡</div>
+            <div class="feat-content">
+              <div class="feat-title">All contract types</div>
+              <p class="feat-desc">
+                SaaS subscriptions, office leases, vendor MSAs, consultant
+                retainers — if it has a date, Renewl tracks it.
+              </p>
+            </div>
+          </div>
+          <div
+            class="feat reveal"
+            data-reveal="right"
+            style="transition-delay: 0.15s"
+          >
+            <div class="feat-icon-wrap feat-icon">$</div>
+            <div class="feat-content">
+              <div class="feat-title">Flat pricing</div>
+              <p class="feat-desc">
+                No per-user fees. No MAU calculations. No surprise invoices. A
+                price you can quote from memory.
+              </p>
+            </div>
+          </div>
+          <div
+            class="feat reveal"
+            data-reveal="left"
+            style="transition-delay: 0.2s"
+          >
+            <div class="feat-icon-wrap feat-icon">%</div>
+            <div class="feat-content">
+              <div class="feat-title">Confidence scoring</div>
+              <p class="feat-desc">
+                Every extracted field is scored 0–100%. Green fields confirm in
+                one click. Amber fields are flagged for review.
+              </p>
+            </div>
+          </div>
+          <div
+            class="feat reveal"
+            data-reveal="right"
+            style="transition-delay: 0.25s"
+          >
+            <div class="feat-icon-wrap feat-icon">◫</div>
+            <div class="feat-content">
+              <div class="feat-title">Renewal dashboard</div>
+              <p class="feat-desc">
+                All contracts sorted by days-until-renewal. The most urgent ones
+                surface first. Nothing hides in a spreadsheet.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ── PRICING ── -->
+    <section class="pricing reveal" data-reveal="scale">
+      <div class="wrap">
+        <div class="tag">Pricing</div>
+        <h2>Simple, flat pricing</h2>
+
+        <div class="plans">
+          <div class="plan reveal">
+            <div class="plan-name">Free</div>
+            <div class="plan-price">$0</div>
+            <div class="plan-cadence">Forever free · no credit card</div>
+            <div class="plan-rule"></div>
+            <ul class="plan-list">
+              <li>Up to 20 contracts</li>
+              <li>Email alerts</li>
+              <li>AI extraction with confidence scoring</li>
+              <li>Renewal dashboard</li>
+              <li>All contract types</li>
+            </ul>
+            <a
+              href="#waitlist"
+              class="btn-outline"
+              style="display: block; text-align: center"
+              >Get started →</a
+            >
+          </div>
+
+          <div class="plan plan-pro reveal" style="transition-delay: 0.1s">
+            <div class="plan-name">Pro</div>
+            <div class="plan-price"><sup>$</sup>49</div>
+            <div class="plan-cadence">Per month · cancel anytime</div>
+            <div class="plan-rule"></div>
+            <ul class="plan-list">
+              <li>Unlimited contracts</li>
+              <li>Email + Slack alerts</li>
+              <li>AI extraction with confidence scoring</li>
+              <li>Renewal dashboard</li>
+              <li>CSV export</li>
+              <li>All contract types</li>
+              <li>Personal onboarding session</li>
+            </ul>
+            <a
+              href="#waitlist"
+              class="btn-solid"
+              style="display: block; text-align: center"
+              >Join waitlist →</a
+            >
+          </div>
+        </div>
+
+        <p class="pricing-note">
+          No MAU pricing. No per-user fees. No surprises.
+        </p>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ── FINAL CTA ── -->
+    <section class="final-cta reveal" data-reveal="scale" id="waitlist">
+      <div class="wrap">
+        <div class="tag">Early access</div>
+        <h2>Get notified when we launch</h2>
+        <p class="cta-body">
+          Shipping in 30 days. Join the waitlist for early access and a personal
+          onboarding session.
+        </p>
+
+        <form
+          class="cta-form"
+          id="cta-form"
+          onsubmit="handleSubmit(event, 'cta-ok')"
+        >
+          <input
+            type="email"
+            placeholder="your@company.com"
+            required
+            autocomplete="email"
+          />
+          <button type="submit" class="btn-solid">Join waitlist →</button>
+        </form>
+        <div
+          class="success-msg"
+          id="cta-ok"
+          style="max-width: 440px; margin: 0 auto 14px"
+        >
+          You're on the list. We'll be in touch.
+        </div>
+      </div>
+    </section>
+
+    <!-- ── FOOTER ── -->
+    <footer>
+      <div class="wrap">
+        <div class="foot-inner">
+          <div class="foot-copy">© 2026 Renewl · getrenewl.com</div>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      /* ── Countdown: target = 20 Apr 2026 ── */
+      const TARGET = new Date("2026-04-20T09:00:00");
+      const CONTRACT_START = new Date("2025-04-21T09:00:00");
+
+      function pad(n) {
+        return String(Math.max(0, n)).padStart(2, "0");
+      }
+
+      function tick() {
+        const now = new Date();
+        const diff = TARGET - now;
+
+        if (diff <= 0) {
+          ["cd-d", "cd-h", "cd-m", "cd-s"].forEach(
+            (id) => (document.getElementById(id).textContent = "00"),
+          );
+          return;
+        }
+
+        document.getElementById("cd-d").textContent = pad(
+          Math.floor(diff / 864e5),
+        );
+        document.getElementById("cd-h").textContent = pad(
+          Math.floor((diff % 864e5) / 36e5),
+        );
+        document.getElementById("cd-m").textContent = pad(
+          Math.floor((diff % 36e5) / 6e4),
+        );
+        document.getElementById("cd-s").textContent = pad(
+          Math.floor((diff % 6e4) / 1e3),
+        );
+
+        // Progress bar
+        const pct = Math.max(
+          0,
+          Math.min(
+            100,
+            Math.round(
+              ((now - CONTRACT_START) / (TARGET - CONTRACT_START)) * 100,
+            ),
+          ),
+        );
+        const fill = document.getElementById("prog-fill");
+        const lbl = document.getElementById("prog-pct");
+        if (fill) fill.style.width = pct + "%";
+        if (lbl) lbl.textContent = pct + "% elapsed";
+      }
+
+      tick();
+      setInterval(tick, 1000);
+
+      /* ── Form submission ── */
+      function handleSubmit(e, successId) {
+        e.preventDefault();
+        e.currentTarget.style.display = "none";
+        const ok = document.getElementById(successId);
+        if (ok) ok.style.display = "block";
+      }
+
+      /* ── Scroll reveal ── */
+      // Set initial transforms based on data-reveal attribute
+      document.querySelectorAll(".reveal").forEach((el) => {
+        const dir = el.dataset.reveal;
+        if (dir === "left") {
+          el.style.transform = "translateX(-20px)";
+          el.style.opacity = "0";
+        } else if (dir === "right") {
+          el.style.transform = "translateX(20px)";
+          el.style.opacity = "0";
+        } else if (dir === "scale") {
+          el.style.transform = "scale(0.97)";
+          el.style.opacity = "0";
+        }
+      });
+
+      const io = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((en) => {
+            if (en.isIntersecting) {
+              en.target.style.transform = "";
+              en.target.style.opacity = "";
+              en.target.classList.add("in");
+            }
+          });
+        },
+        { threshold: 0.08, rootMargin: "0px 0px -32px 0px" },
+      );
+
+      document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+    </script>
+  </body>
+</html>

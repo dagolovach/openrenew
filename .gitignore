@@ -1,0 +1,37 @@
+# brainstorming session files
+.superpowers/
+
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# production build
+.next/
+out/
+build/
+
+# env files
+.env*.local
+.env
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Python service test contracts (real PDFs — never commit)
+python-service/contracts/
+
+# Git worktrees
+.worktrees/

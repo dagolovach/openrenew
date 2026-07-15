@@ -1,0 +1,163 @@
+/* ── Dashboard nav ────────────────────────────────── */
+.dash-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dash-header-inner {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+}
+
+.dash-nav-desktop {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.dash-nav-link {
+  font-size: 13px;
+  color: #6B7280;
+  text-decoration: none;
+}
+
+.dash-nav-link:hover {
+  color: #9CA3AF;
+}
+
+.dash-nav-email {
+  font-size: 13px;
+  color: #4B5563;
+}
+
+/* Hamburger button – hidden on desktop */
+.dash-mobile-toggle {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dash-hamburger {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 22px;
+}
+
+.dash-hamburger span {
+  display: block;
+  height: 2px;
+  background: #9CA3AF;
+  border-radius: 1px;
+  transition: transform 200ms ease, opacity 200ms ease;
+}
+
+.dash-hamburger.open span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.dash-hamburger.open span:nth-child(2) {
+  opacity: 0;
+}
+
+.dash-hamburger.open span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+/* Mobile overlay */
+.dash-mobile-overlay {
+  position: fixed;
+  inset: 56px 0 0 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  animation: dash-fade-in 150ms ease;
+}
+
+.dash-mobile-menu {
+  background: #111827;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dash-mobile-email {
+  font-size: 13px;
+  color: #4B5563;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-mobile-link {
+  font-size: 15px;
+  color: #9CA3AF;
+  text-decoration: none;
+  padding: 10px 0;
+}
+
+.dash-mobile-link:hover {
+  color: #F9FAFB;
+}
+
+.dash-mobile-logout {
+  padding: 6px 0 0;
+}
+
+@keyframes dash-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Responsive: show hamburger, hide desktop nav on mobile */
+@media (max-width: 640px) {
+  .dash-nav-desktop {
+    display: none;
+  }
+
+  .dash-mobile-toggle {
+    display: block;
+  }
+
+  .dash-metrics-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* ── Animations ──────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.shimmer-line {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.09) 50%,
+    rgba(255,255,255,0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
