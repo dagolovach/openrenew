@@ -726,3 +726,29 @@ def test_compare_endpoint_requires_auth(client):
         "previous_fields": {},
     })
     assert r.status_code == 401
+
+
+# ── validate_file_path ────────────────────────────────
+
+def test_validate_file_path_rejects_traversal():
+    from main import validate_file_path
+    import pytest
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException):
+        validate_file_path("../../etc/passwd")
+    with pytest.raises(HTTPException):
+        validate_file_path("/etc/passwd")
+
+
+def test_validate_file_path_accepts_relative(tmp_path, monkeypatch):
+    # NOTE: deviates from importlib.reload(main) — reloading main in-place mutates
+    # the shared module object that other tests' `from main import app` bindings and
+    # the autouse patch_secret fixture depend on, so a reload here would leak into
+    # later tests (DATA_DIR would stay pinned to tmp_path for the rest of the run).
+    # Directly monkeypatching the module-level DATA_DIR constant is equivalent for
+    # what this test checks and is automatically undone by monkeypatch's teardown.
+    import pathlib
+    import main
+    monkeypatch.setattr(main, "DATA_DIR", pathlib.Path(tmp_path).resolve())
+    p = main.validate_file_path("user1/c1/original.pdf")
+    assert str(p).startswith(str(tmp_path))

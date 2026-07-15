@@ -1,6 +1,6 @@
 """OpenRenew PDF Extraction Service"""
 import asyncio
-import re, os, io, time, json, hmac, ipaddress
+import re, os, io, time, json, hmac, ipaddress, pathlib
 from typing import Literal, Optional
 from urllib.parse import urlparse
 import pdfplumber
@@ -53,6 +53,38 @@ def validate_file_url(url: str) -> None:
         raise HTTPException(status_code=500, detail="Storage domain allowlist not configured")
     if not any(hostname == d or hostname.endswith(f'.{d}') for d in ALLOWED_STORAGE_DOMAINS):
         raise HTTPException(status_code=422, detail="URL domain not allowed")
+
+DATA_DIR = pathlib.Path(os.getenv("DATA_DIR", "/data/contracts")).resolve()
+
+def validate_file_path(rel_path: str) -> pathlib.Path:
+    """Resolve a relative contract path inside DATA_DIR; reject traversal/absolute paths."""
+    if not rel_path or rel_path.startswith(("/", "\\")):
+        raise HTTPException(status_code=422, detail="file_path must be relative")
+    abs_path = (DATA_DIR / rel_path).resolve()
+    if not str(abs_path).startswith(str(DATA_DIR) + os.sep):
+        raise HTTPException(status_code=422, detail="file_path escapes data directory")
+    return abs_path
+
+async def load_pdf_bytes(file_url: Optional[str], file_path: Optional[str]) -> bytes:
+    """Load PDF from a local path (preferred, self-hosted) or an allowlisted URL."""
+    if file_path:
+        abs_path = validate_file_path(file_path)
+        try:
+            return await asyncio.to_thread(abs_path.read_bytes)
+        except FileNotFoundError:
+            raise ExtractionError(422, "file_not_found", file_path)
+    if not file_url:
+        raise ExtractionError(422, "missing_input", "file_url or file_path is required")
+    validate_file_url(file_url)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.get(file_url)
+            r.raise_for_status()
+            return r.content
+    except ExtractionError:
+        raise
+    except Exception as e:
+        raise ExtractionError(422, "file_download_failed", str(e))
 
 def verify_auth(authorization: Optional[str] = Header(None)):
     if not EXTRACTION_SERVICE_SECRET:
@@ -295,7 +327,8 @@ The contract text has been anonymized: company names are replaced with "Party A"
 
 
 class AnalyseRequest(BaseModel):
-    file_url: str
+    file_url: Optional[str] = None
+    file_path: Optional[str] = None
     contract_id: Optional[str] = None
     party_a: Optional[str] = None
     party_b: Optional[str] = None
@@ -564,11 +597,13 @@ async def _run_extraction(pdf_bytes: bytes, contract_id: Optional[str], party_a:
     }
 
 class DetectPartiesRequest(BaseModel):
-    file_url: str
+    file_url: Optional[str] = None
+    file_path: Optional[str] = None
 
 
 class ExtractRequest(BaseModel):
-    file_url: str
+    file_url: Optional[str] = None
+    file_path: Optional[str] = None
     contract_id: Optional[str] = None
     party_a: Optional[str] = None
     party_b: Optional[str] = None
@@ -576,17 +611,10 @@ class ExtractRequest(BaseModel):
 
 @app.post("/extract")
 async def extract(req: ExtractRequest, _: None = Depends(verify_auth)):
-    print(f"[extract] file_url={req.file_url[:80]}... contract_id={req.contract_id}", flush=True)
-    validate_file_url(req.file_url)
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(req.file_url)
-            r.raise_for_status()
-    except Exception as e:
-        print(f"[extract] file_download_failed: {e}", flush=True)
-        raise ExtractionError(422, "file_download_failed", str(e))
-    print(f"[extract] downloaded {len(r.content)} bytes", flush=True)
-    return await _run_extraction(r.content, req.contract_id, req.party_a, req.party_b)
+    print(f"[extract] file_url={(req.file_url or '')[:80]}... file_path={req.file_path} contract_id={req.contract_id}", flush=True)
+    pdf_bytes = await load_pdf_bytes(req.file_url, req.file_path)
+    print(f"[extract] downloaded {len(pdf_bytes)} bytes", flush=True)
+    return await _run_extraction(pdf_bytes, req.contract_id, req.party_a, req.party_b)
 
 
 @app.post("/extract-file")
@@ -598,17 +626,11 @@ async def extract_file(file: UploadFile = File(...), contract_id: Optional[str] 
 
 @app.post("/detect-parties")
 async def detect_parties_endpoint(req: DetectPartiesRequest, _: None = Depends(verify_auth)):
-    validate_file_url(req.file_url)
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(req.file_url)
-            r.raise_for_status()
-    except Exception as e:
-        raise ExtractionError(422, "file_download_failed", str(e))
+    pdf_bytes = await load_pdf_bytes(req.file_url, req.file_path)
 
     try:
         text = await asyncio.wait_for(
-            asyncio.to_thread(extract_text_from_bytes, r.content),
+            asyncio.to_thread(extract_text_from_bytes, pdf_bytes),
             timeout=PDF_PARSE_TIMEOUT,
         )
     except Exception as e:
@@ -667,15 +689,8 @@ async def _run_analyse(pdf_bytes: bytes, req: AnalyseRequest) -> dict:
 
 @app.post("/analyse")
 async def analyse(req: AnalyseRequest, _: None = Depends(verify_auth)):
-    validate_file_url(req.file_url)
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(req.file_url)
-            r.raise_for_status()
-    except Exception as e:
-        raise ExtractionError(422, "file_download_failed", str(e))
-
-    return await _run_analyse(r.content, req)
+    pdf_bytes = await load_pdf_bytes(req.file_url, req.file_path)
+    return await _run_analyse(pdf_bytes, req)
 
 
 COMPARISON_SYSTEM_PROMPT = """You are a contract comparison assistant helping ops and finance teams understand what changed between two versions of a vendor contract.
@@ -700,8 +715,10 @@ Rules:
 class CompareRequest(BaseModel):
     current_text: str = ""
     previous_text: str = ""
-    current_file_url: Optional[str] = None   # Signed URL — Python fetches + extracts text
-    previous_file_url: Optional[str] = None  # Signed URL
+    current_file_url: Optional[str] = None    # Signed URL — Python fetches + extracts text
+    previous_file_url: Optional[str] = None   # Signed URL
+    current_file_path: Optional[str] = None   # Relative path on the shared data volume
+    previous_file_path: Optional[str] = None  # Relative path on the shared data volume
     current_fields: dict = {}
     previous_fields: dict = {}
 
@@ -793,25 +810,20 @@ Output ONLY the JSON object."""
 
 @app.post("/compare")
 async def compare(req: CompareRequest, _: None = Depends(verify_auth)):
-    print(f"[compare] current_url={req.current_file_url} previous_url={req.previous_file_url}", flush=True)
+    print(f"[compare] current_url={req.current_file_url} current_path={req.current_file_path} "
+          f"previous_url={req.previous_file_url} previous_path={req.previous_file_path}", flush=True)
 
-    if not req.current_text and not req.current_file_url:
-        raise ExtractionError(422, "missing_input", "current_text or current_file_url is required")
-    if not req.previous_text and not req.previous_file_url:
-        raise ExtractionError(422, "missing_input", "previous_text or previous_file_url is required")
+    if not req.current_text and not req.current_file_url and not req.current_file_path:
+        raise ExtractionError(422, "missing_input", "current_text, current_file_url, or current_file_path is required")
+    if not req.previous_text and not req.previous_file_url and not req.previous_file_path:
+        raise ExtractionError(422, "missing_input", "previous_text, previous_file_url, or previous_file_path is required")
 
-    # Fetch and extract text from URLs if text not provided directly
-    if req.current_file_url and not req.current_text:
-        validate_file_url(req.current_file_url)
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as http_client:
-                r = await http_client.get(req.current_file_url)
-                r.raise_for_status()
-        except Exception as e:
-            raise ExtractionError(422, "file_download_failed", str(e))
+    # Fetch and extract text from URL/path if text not provided directly
+    if (req.current_file_url or req.current_file_path) and not req.current_text:
+        pdf_bytes = await load_pdf_bytes(req.current_file_url, req.current_file_path)
         try:
             text = await asyncio.wait_for(
-                asyncio.to_thread(extract_text_from_bytes, r.content),
+                asyncio.to_thread(extract_text_from_bytes, pdf_bytes),
                 timeout=PDF_PARSE_TIMEOUT,
             )
         except asyncio.TimeoutError:
@@ -820,17 +832,11 @@ async def compare(req: CompareRequest, _: None = Depends(verify_auth)):
             raise ExtractionError(422, "no_text_extracted", "No extractable text found in PDF")
         req = req.model_copy(update={"current_text": truncate_text(text)})
 
-    if req.previous_file_url and not req.previous_text:
-        validate_file_url(req.previous_file_url)
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as http_client:
-                r = await http_client.get(req.previous_file_url)
-                r.raise_for_status()
-        except Exception as e:
-            raise ExtractionError(422, "file_download_failed", str(e))
+    if (req.previous_file_url or req.previous_file_path) and not req.previous_text:
+        pdf_bytes = await load_pdf_bytes(req.previous_file_url, req.previous_file_path)
         try:
             text = await asyncio.wait_for(
-                asyncio.to_thread(extract_text_from_bytes, r.content),
+                asyncio.to_thread(extract_text_from_bytes, pdf_bytes),
                 timeout=PDF_PARSE_TIMEOUT,
             )
         except asyncio.TimeoutError:
