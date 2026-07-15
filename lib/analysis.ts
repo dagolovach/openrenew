@@ -1,5 +1,7 @@
 // lib/analysis.ts
-import { createClient } from "@supabase/supabase-js";
+import { eq, desc } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { contracts, contractAnalysis, activityLog } from "@/lib/db/schema";
 
 export type Finding = {
   type: "warning" | "positive" | "info";
@@ -17,53 +19,42 @@ export async function triggerAnalysis(
   contractId: string,
   userId: string
 ): Promise<{ findings: Finding[] }> {
-  const adminClient = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-
   // 1. Idempotency: if a row was written within the last 60 seconds, return it
   //    This guards against double-confirm clicks firing two concurrent analyses.
-  const { data: existing } = await adminClient
-    .from("contract_analysis")
-    .select("id, findings, created_at, analysis_version")
-    .eq("contract_id", contractId)
-    .order("analysis_version", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const existing = await db.query.contractAnalysis.findFirst({
+    where: eq(contractAnalysis.contractId, contractId),
+    orderBy: desc(contractAnalysis.analysisVersion),
+  });
 
   if (existing) {
-    const ageMs = Date.now() - new Date(existing.created_at).getTime();
+    const ageMs = Date.now() - existing.createdAt.getTime();
     if (ageMs < IDEMPOTENCY_WINDOW_MS) {
       return { findings: existing.findings as Finding[] };
     }
   }
 
-  const nextVersion = existing ? (existing.analysis_version as number) + 1 : 1;
+  const nextVersion = existing ? existing.analysisVersion + 1 : 1;
 
-  // 2. Fetch contract fields (admin client bypasses RLS — contractId already verified upstream)
-  const { data: contract, error: contractError } = await adminClient
-    .from("contracts")
-    .select(
-      "file_path, party_a, party_b, category, auto_renew, notice_period_days, contract_value, expiry_date"
-    )
-    .eq("id", contractId)
-    .single();
+  // 2. Fetch contract fields (contractId already verified upstream)
+  const contract = await db.query.contracts.findFirst({
+    where: eq(contracts.id, contractId),
+    columns: {
+      filePath: true,
+      partyA: true,
+      partyB: true,
+      category: true,
+      autoRenew: true,
+      noticePeriodDays: true,
+      contractValue: true,
+      expiryDate: true,
+    },
+  });
 
-  if (contractError || !contract || !contract.file_path) {
+  if (!contract || !contract.filePath) {
     throw new Error("Contract not found or has no attached file");
   }
 
-  // 3. Generate signed URL — storage requires service role key (session client cannot do this)
-  const { data: signedData, error: signError } = await adminClient.storage
-    .from("contracts")
-    .createSignedUrl(contract.file_path, 120); // 120s validity — enough for the Python call
-
-  if (signError || !signedData) {
-    throw new Error("Could not generate signed URL for contract file");
-  }
-
-  // 4. Call Python /analyse
+  // 3. Call Python /analyse
   let findings: Finding[];
   let modelUsed = "claude-haiku-4-5";
   try {
@@ -74,15 +65,15 @@ export async function triggerAnalysis(
         Authorization: `Bearer ${process.env.EXTRACTION_SERVICE_SECRET}`,
       },
       body: JSON.stringify({
-        file_url: signedData.signedUrl,
+        file_path: contract.filePath,
         contract_id: contractId,
-        party_a: contract.party_a,
-        party_b: contract.party_b,
+        party_a: contract.partyA,
+        party_b: contract.partyB,
         category: contract.category,
-        auto_renew: contract.auto_renew,
-        notice_period_days: contract.notice_period_days,
-        contract_value: contract.contract_value,
-        expiry_date: contract.expiry_date,
+        auto_renew: contract.autoRenew,
+        notice_period_days: contract.noticePeriodDays,
+        contract_value: contract.contractValue,
+        expiry_date: contract.expiryDate,
       }),
       signal: AbortSignal.timeout(55_000),
     });
@@ -102,26 +93,23 @@ export async function triggerAnalysis(
     throw err;
   }
 
-  // 5. Persist to contract_analysis
+  // 4. Persist to contract_analysis
   //    UNIQUE(contract_id, analysis_version) constraint: concurrent triggers that race past
-  //    the idempotency window will hit a unique violation (code "23505") on the second insert —
-  //    that's acceptable. Any other error is a real problem and should surface.
-  const { error: insertError } = await adminClient.from("contract_analysis").insert({
-    contract_id: contractId,
-    user_id: userId,
+  //    the idempotency window will hit a unique violation on the second insert — that's
+  //    acceptable, so we tolerate the conflict rather than surfacing it.
+  await db.insert(contractAnalysis).values({
+    contractId,
+    createdBy: userId,
     findings,
     model: modelUsed,
-    analysis_version: nextVersion,
-  });
-  if (insertError && insertError.code !== "23505") {
-    throw new Error(`Failed to persist analysis: ${insertError.message}`);
-  }
+    analysisVersion: nextVersion,
+  }).onConflictDoNothing();
 
-  // 6. Activity log
-  await adminClient.from("activity_log").insert({
-    user_id: userId,
-    contract_id: contractId,
-    event_type: "contract_analysed",
+  // 5. Activity log
+  await db.insert(activityLog).values({
+    userId,
+    contractId,
+    eventType: "contract_analysed",
     metadata: { analysis_version: nextVersion, finding_count: findings.length },
   });
 

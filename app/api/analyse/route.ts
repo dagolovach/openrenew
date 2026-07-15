@@ -1,19 +1,18 @@
 // app/api/analyse/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { eq, desc } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { contracts, contractAnalysis } from "@/lib/db/schema";
+import { requireUser } from "@/lib/auth/session";
 import { triggerAnalysis } from "@/lib/analysis";
 import { z } from "zod";
 
-export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 // GET /api/analyse?contract_id=<uuid>
 // Returns existing analysis without triggering a new one. Used by client polling loop.
 export async function GET(request: Request) {
-  const sessionClient = await createClient();
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
+  const user = await requireUser();
   if (!user) {
     // findings: null signals "keep polling" — reused here for simplicity
     return NextResponse.json({ findings: null }, { status: 401 });
@@ -25,14 +24,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ findings: null }, { status: 400 });
   }
 
-  // RLS on contract_analysis enforces that user can only see their own rows
-  const { data } = await sessionClient
-    .from("contract_analysis")
-    .select("findings, analysis_version, created_at")
-    .eq("contract_id", contractId)
-    .order("analysis_version", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const data = await db.query.contractAnalysis.findFirst({
+    where: eq(contractAnalysis.contractId, contractId),
+    orderBy: desc(contractAnalysis.analysisVersion),
+  });
 
   if (!data) {
     // Analysis not yet run — client should keep polling
@@ -41,8 +36,8 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     findings: data.findings,
-    analysis_version: data.analysis_version,
-    created_at: data.created_at,
+    analysis_version: data.analysisVersion,
+    created_at: data.createdAt,
   });
 }
 
@@ -53,13 +48,8 @@ const analyseSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const sessionClient = await createClient();
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const user = await requireUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
   const parsed = analyseSchema.safeParse(body);
@@ -68,12 +58,10 @@ export async function POST(request: Request) {
   }
   const { contract_id } = parsed.data;
 
-  // Verify contract ownership via session client (RLS enforces this)
-  const { data: contract } = await sessionClient
-    .from("contracts")
-    .select("id")
-    .eq("id", contract_id)
-    .maybeSingle();
+  const contract = await db.query.contracts.findFirst({
+    where: eq(contracts.id, contract_id),
+    columns: { id: true },
+  });
 
   if (!contract) {
     return NextResponse.json({ error: "Contract not found" }, { status: 404 });

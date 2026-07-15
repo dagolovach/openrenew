@@ -1,19 +1,18 @@
 // app/api/compare/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { contracts, contractComparisons } from "@/lib/db/schema";
+import { requireUser } from "@/lib/auth/session";
 import { triggerComparison } from "@/lib/comparison";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
 
 // GET /api/compare?contract_id=...
 // Returns existing comparison or { comparison: null } if not yet run
 export async function GET(request: Request) {
-  const sessionClient = await createClient();
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
+  const user = await requireUser();
   if (!user) {
     return NextResponse.json({ comparison: null }, { status: 401 });
   }
@@ -24,17 +23,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ comparison: null }, { status: 400 });
   }
 
-  const { data } = await sessionClient
-    .from("contract_comparisons")
-    .select("field_changes, clause_changes, summary, created_at")
-    .eq("contract_id", contractId)
-    .maybeSingle();
+  const data = await db.query.contractComparisons.findFirst({
+    where: eq(contractComparisons.contractId, contractId),
+  });
 
   if (!data) {
     return NextResponse.json({ comparison: null });
   }
 
-  return NextResponse.json({ comparison: data });
+  return NextResponse.json({
+    comparison: {
+      field_changes: data.fieldChanges,
+      clause_changes: data.clauseChanges,
+      summary: data.summary,
+      created_at: data.createdAt,
+    },
+  });
 }
 
 // POST /api/compare
@@ -44,13 +48,8 @@ const compareSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const sessionClient = await createClient();
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const user = await requireUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
   const parsed = compareSchema.safeParse(body);
@@ -59,18 +58,16 @@ export async function POST(request: Request) {
   }
   const { contract_id } = parsed.data;
 
-  // Verify ownership and get parent_contract_id (RLS ensures user owns contract)
-  const { data: contract } = await sessionClient
-    .from("contracts")
-    .select("id, parent_contract_id")
-    .eq("id", contract_id)
-    .maybeSingle();
+  const contract = await db.query.contracts.findFirst({
+    where: eq(contracts.id, contract_id),
+    columns: { id: true, parentContractId: true },
+  });
 
   if (!contract) {
     return NextResponse.json({ error: "Contract not found" }, { status: 404 });
   }
 
-  if (!contract.parent_contract_id) {
+  if (!contract.parentContractId) {
     return NextResponse.json(
       { error: "Contract has no parent — nothing to compare" },
       { status: 400 }
@@ -80,7 +77,7 @@ export async function POST(request: Request) {
   try {
     const result = await triggerComparison(
       contract_id,
-      contract.parent_contract_id,
+      contract.parentContractId,
       user.id
     );
     return NextResponse.json({ comparison: result });

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
+import { eq, and, desc } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { contracts, activityLog } from "@/lib/db/schema";
+import { requireUser } from "@/lib/auth/session";
 import { z } from "zod";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -20,8 +23,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 export async function GET(request: Request) {
-  const sessionClient = await createClient();
-  const { data: { user } } = await sessionClient.auth.getUser();
+  const user = await requireUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -33,25 +35,19 @@ export async function GET(request: Request) {
   }
   const { contract_id } = parsed.data;
 
-  const { data: contract } = await sessionClient
-    .from("contracts")
-    .select("id")
-    .eq("id", contract_id)
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const contract = await db.query.contracts.findFirst({
+    where: eq(contracts.id, contract_id),
+    columns: { id: true },
+  });
 
   if (!contract) {
     return NextResponse.json({ error: "Contract not found" }, { status: 404 });
   }
 
-  const { data: activity } = await sessionClient
-    .from("activity_log")
-    .select("metadata, created_at")
-    .eq("contract_id", contract_id)
-    .eq("event_type", "extraction_complete")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const activity = await db.query.activityLog.findFirst({
+    where: and(eq(activityLog.contractId, contract_id), eq(activityLog.eventType, "extraction_complete")),
+    orderBy: desc(activityLog.createdAt),
+  });
 
   if (!activity) {
     return NextResponse.json({ comparison: null });
@@ -77,7 +73,7 @@ export async function GET(request: Request) {
       changed_count: typeof fieldComparison.changed_count === "number" ? fieldComparison.changed_count : rows.filter((r) => r.changed).length,
       total_count: typeof fieldComparison.total_count === "number" ? fieldComparison.total_count : rows.length,
       rows,
-      created_at: activity.created_at,
+      created_at: activity.createdAt,
     },
   });
 }

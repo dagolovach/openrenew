@@ -14,7 +14,6 @@ const extractSchema = z.object({
 export const dynamic = "force-dynamic";
 
 const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL ?? "http://localhost:8000";
-const ENABLE_LEGACY_COMPARISON = process.env.EXTRACT_COMPARE_WITH_LEGACY === "true";
 
 const UPSERT_FIELDS = [
   "effective_date",
@@ -56,65 +55,10 @@ function toNumber(value: unknown): number | null {
   return null;
 }
 
-function toInt(value: unknown): number | null {
-  const n = toNumber(value);
-  if (n === null) return null;
-  return Number.isInteger(n) ? n : Math.round(n);
-}
-
 function clampConfidence(value: unknown): number {
   const n = toNumber(value);
   if (n === null) return 0;
   return Math.max(0, Math.min(1, n));
-}
-
-function mapLangGraphToLegacyFields(data: JsonObject): JsonObject {
-  const renewalType = typeof data.renewal_type === "string" ? data.renewal_type : "unknown";
-  const autoRenew = renewalType === "auto" || renewalType === "evergreen"
-    ? true
-    : renewalType === "manual"
-    ? false
-    : null;
-
-  return {
-    effective_date: normalizeScalar(data.effective_date),
-    expiry_date: normalizeScalar(data.expiration_date),
-    renewal_date: normalizeScalar(data.renewal_date),
-    auto_renew: autoRenew,
-    notice_period_days: toInt(data.notice_period_days),
-    notice_period_text: normalizeScalar(data.notice_period_text),
-    contract_value: normalizeScalar(data.contract_value),
-    annual_value: toNumber(data.annual_value),
-    confidence: clampConfidence(data.overall_confidence),
-    category: normalizeScalar(data.category) ?? "vendor",
-  };
-}
-
-function normalizeSnapshot(fields: JsonObject): Record<string, string | null> {
-  const snapshot: Record<string, string | null> = {};
-  for (const field of UPSERT_FIELDS) {
-    snapshot[field] = normalizeScalar(fields[field]);
-  }
-  return snapshot;
-}
-
-function buildFieldComparison(legacyFields: JsonObject, langgraphFields: JsonObject) {
-  const rows = UPSERT_FIELDS.map((field) => {
-    const legacy = normalizeScalar(legacyFields[field]);
-    const langgraph = normalizeScalar(langgraphFields[field]);
-    return {
-      field,
-      legacy,
-      langgraph,
-      changed: legacy !== langgraph,
-    };
-  });
-
-  return {
-    changed_count: rows.filter((r) => r.changed).length,
-    total_count: rows.length,
-    rows,
-  };
 }
 
 async function callPythonExtraction(path: string, payload: JsonObject): Promise<EndpointResult> {
@@ -182,60 +126,16 @@ export async function POST(request: Request) {
   const resolvedPartyB = party_b ?? contract.partyB ?? null;
 
   after(async () => {
-    let extractionResult: JsonObject = { error: "extraction_failed" };
-    let extractionEngine = "langgraph_v2";
-
-    let langgraphFieldsSnapshot: Record<string, string | null> | null = null;
-    let legacyFieldsSnapshot: Record<string, string | null> | null = null;
-    let fieldComparison: ReturnType<typeof buildFieldComparison> | null = null;
-
-    const v2Result = await callPythonExtraction("/extract-v2/start", {
+    const legacyResult = await callPythonExtraction("/extract", {
       file_path: filePath,
-      thread_id: contract_id,
+      contract_id,
+      party_a: resolvedPartyA,
+      party_b: resolvedPartyB,
     });
 
-    if (v2Result.ok) {
-      const status = typeof v2Result.json.status === "string" ? v2Result.json.status : "error";
-      const data = asObject(v2Result.json.data);
-      const mappedV2Fields = mapLangGraphToLegacyFields(data);
-      extractionResult = {
-        fields: mappedV2Fields,
-        model: "langgraph-gpt-4o",
-        raw_text_length: null,
-        v2_status: status,
-        v2_thread_id: normalizeScalar(v2Result.json.thread_id),
-        uncertain_fields: Array.isArray(v2Result.json.uncertain_fields) ? v2Result.json.uncertain_fields : [],
-      };
-      langgraphFieldsSnapshot = normalizeSnapshot(mappedV2Fields);
-    } else {
-      extractionResult = { error: normalizeScalar(v2Result.json.error) ?? "extraction_v2_failed" };
-    }
-
-    if (ENABLE_LEGACY_COMPARISON || ("error" in extractionResult && !("fields" in extractionResult))) {
-      const legacyResult = await callPythonExtraction("/extract", {
-        file_path: filePath,
-        contract_id,
-        party_a: resolvedPartyA,
-        party_b: resolvedPartyB,
-      });
-
-      if (legacyResult.ok) {
-        const legacyFields = asObject(legacyResult.json.fields);
-        legacyFieldsSnapshot = normalizeSnapshot(legacyFields);
-
-        if ("error" in extractionResult && !("fields" in extractionResult)) {
-          extractionEngine = "legacy_fallback";
-          extractionResult = {
-            ...legacyResult.json,
-            engine: extractionEngine,
-          };
-        }
-
-        if (langgraphFieldsSnapshot) {
-          fieldComparison = buildFieldComparison(legacyFields, asObject(extractionResult.fields));
-        }
-      }
-    }
+    const extractionResult: JsonObject = legacyResult.ok
+      ? { ...legacyResult.json, engine: "legacy_fallback" }
+      : { error: normalizeScalar(legacyResult.json.error) ?? "extraction_failed" };
 
     const failed = "error" in extractionResult && !("fields" in extractionResult);
     const isScanned = extractionResult.error === "no_text_extracted";
@@ -247,8 +147,6 @@ export async function POST(request: Request) {
       ? "This looks like a scanned PDF. Please enter the dates manually."
       : failed
       ? "Extraction failed. Please enter dates manually."
-      : extractionResult.v2_status === "human_needed"
-      ? "LangGraph marked uncertain fields for review."
       : null;
 
     if (!failed) {
@@ -280,23 +178,16 @@ export async function POST(request: Request) {
       contractId: contract_id,
       eventType: "extraction_complete",
       metadata: {
-        pipeline_version: "langgraph_v2",
-        extraction_engine: extractionEngine,
+        pipeline_version: "legacy",
+        extraction_engine: "legacy_fallback",
         model: normalizeScalar(extractionResult.model),
         confidence: failed ? null : confidence,
         raw_text_length: toNumber(extractionResult.raw_text_length),
         extraction_status: extractionStatus,
         error: normalizeScalar(extractionResult.error),
         status_message: statusMessage,
-        v2_thread_id: normalizeScalar(extractionResult.v2_thread_id),
-        v2_status: normalizeScalar(extractionResult.v2_status),
-        uncertain_fields: extractionResult.uncertain_fields ?? [],
-        legacy_fields_snapshot: legacyFieldsSnapshot,
-        langgraph_fields_snapshot: langgraphFieldsSnapshot,
-        field_comparison: fieldComparison,
       },
     });
-
   });
 
   return NextResponse.json({ status: "processing", contract_id });

@@ -1,7 +1,10 @@
-// app/api/contracts/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { eq, and, gte } from "drizzle-orm";
+import { promises as fs } from "fs";
+import { db } from "@/lib/db";
+import { contracts, alerts as alertsTable } from "@/lib/db/schema";
+import { requireUser } from "@/lib/auth/session";
+import { pdfAbsolutePath } from "@/lib/storage";
 
 export async function DELETE(
   _request: NextRequest,
@@ -9,67 +12,50 @@ export async function DELETE(
 ) {
   const { id: contractId } = await params;
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Fetch contract to get file_path and parent_contract_id — also verifies ownership via RLS + explicit eq
-  const { data: contract, error: fetchError } = await supabase
-    .from("contracts")
-    .select("id, file_path, parent_contract_id")
-    .eq("id", contractId)
-    .eq("user_id", user.id)
-    .single();
+  // Fetch contract to get file_path and parent_contract_id
+  const contract = await db.query.contracts.findFirst({
+    where: eq(contracts.id, contractId),
+    columns: { id: true, filePath: true, parentContractId: true },
+  });
 
-  if (fetchError || !contract) {
+  if (!contract) {
     return NextResponse.json({ error: "Contract not found" }, { status: 404 });
   }
 
-  // Delete from Storage first (only if a file exists — manual contracts have no file)
-  if (contract.file_path) {
-    const adminClient = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-    const { error: storageError } = await adminClient.storage
-      .from("contracts")
-      .remove([contract.file_path]);
-
-    if (storageError) {
-      console.error("Storage delete error:", storageError);
-      return NextResponse.json({ error: "Failed to delete file" }, { status: 500 });
-    }
-  }
-
-  // Delete DB row — cascades to contract_extractions, alerts, activity_log
-  const { error: dbError } = await supabase
-    .from("contracts")
-    .delete()
-    .eq("id", contractId)
-    .eq("user_id", user.id);
-
-  if (dbError) {
+  // Delete DB row — cascades to contract_extractions, contract_analysis,
+  // contract_comparisons, alerts, activity_log via FK
+  try {
+    await db.delete(contracts).where(eq(contracts.id, contractId));
+  } catch (dbError) {
     console.error("DB delete error:", dbError);
     return NextResponse.json({ error: "Failed to delete contract" }, { status: 500 });
   }
 
+  // Best-effort delete the PDF from disk — don't fail the request if this fails
+  if (contract.filePath) {
+    try {
+      await fs.unlink(pdfAbsolutePath(contract.filePath));
+    } catch (fileError) {
+      console.error("Failed to delete PDF file:", fileError);
+    }
+  }
+
   // If this was a renewal, restore the parent contract to active
   // and re-activate its future alerts (those not yet past their scheduled_for date)
-  if (contract.parent_contract_id) {
-    await supabase
-      .from("contracts")
-      .update({ status: "active" })
-      .eq("id", contract.parent_contract_id)
-      .eq("user_id", user.id);
+  if (contract.parentContractId) {
+    await db.update(contracts).set({ status: "active" }).where(eq(contracts.id, contract.parentContractId));
 
     const today = new Date().toISOString().split("T")[0];
-    await supabase
-      .from("alerts")
-      .update({ status: "pending" })
-      .eq("contract_id", contract.parent_contract_id)
-      .eq("user_id", user.id)
-      .eq("status", "skipped")
-      .gte("scheduled_for", today);
+    await db.update(alertsTable).set({ status: "pending" }).where(
+      and(
+        eq(alertsTable.contractId, contract.parentContractId),
+        eq(alertsTable.status, "skipped"),
+        gte(alertsTable.scheduledFor, today)
+      )
+    );
   }
 
   return new Response(null, { status: 204 });
@@ -80,8 +66,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: contractId } = await params;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let body: Record<string, unknown>;
@@ -91,19 +76,18 @@ export async function PATCH(
 
   // Only allow updating specific safe fields
   const allowed: Record<string, unknown> = {};
-  if (typeof body.annual_value === "number") allowed.annual_value = body.annual_value;
+  if (typeof body.annual_value === "number") allowed.annualValue = body.annual_value;
 
   if (Object.keys(allowed).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
   }
 
-  const { error } = await supabase
-    .from("contracts")
-    .update(allowed)
-    .eq("id", contractId)
-    .eq("user_id", user.id);
-
-  if (error) return NextResponse.json({ error: "Update failed" }, { status: 500 });
+  try {
+    await db.update(contracts).set(allowed).where(eq(contracts.id, contractId));
+  } catch (error) {
+    console.error("Update error:", error);
+    return NextResponse.json({ error: "Update failed" }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true });
 }

@@ -1,10 +1,12 @@
 // app/api/finding-action/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { contracts } from "@/lib/db/schema";
+import { requireUser } from "@/lib/auth/session";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
 
 const bodySchema = z.object({
   contract_id: z.string().uuid(),
@@ -36,13 +38,8 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const sessionClient = await createClient();
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const user = await requireUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json().catch(() => null);
   if (!body) {
@@ -59,13 +56,11 @@ export async function POST(request: Request) {
 
   const { contract_id, findings, contract_context } = parsed.data;
 
-  // Verify the authenticated user owns this contract (defence in depth alongside RLS)
-  const { data: contract } = await sessionClient
-    .from("contracts")
-    .select("id")
-    .eq("id", contract_id)
-    .eq("user_id", user.id)
-    .maybeSingle();
+  // Verify the contract exists (defence in depth)
+  const contract = await db.query.contracts.findFirst({
+    where: eq(contracts.id, contract_id),
+    columns: { id: true },
+  });
 
   if (!contract) {
     return NextResponse.json({ error: "Contract not found" }, { status: 404 });
