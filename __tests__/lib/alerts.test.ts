@@ -5,7 +5,6 @@ const TODAY = new Date("2026-03-21T00:00:00Z");
 
 const base = {
   id: "c1",
-  user_id: "u1",
   expiry_date: null as string | null,
   renewal_date: null as string | null,
   effective_date: null as string | null,
@@ -106,9 +105,9 @@ describe("buildAlerts", () => {
     expect(alerts.map((a) => a.alert_type)).toContain("day_7");
   });
 
-  test("sets correct contract_id and user_id on all rows", () => {
+  test("sets correct contract_id on all rows", () => {
     const alerts = buildAlerts({ ...base, expiry_date: "2026-12-31" }, TODAY);
-    expect(alerts.every((a) => a.contract_id === "c1" && a.user_id === "u1")).toBe(true);
+    expect(alerts.every((a) => a.contract_id === "c1")).toBe(true);
   });
 
   test("all rows have status pending", () => {

@@ -1,7 +1,6 @@
 // lib/alerts.ts
 export type AlertRow = {
   contract_id: string;
-  user_id: string;
   alert_type: "day_60" | "day_30" | "day_7" | "notice_deadline";
   scheduled_for: string;
   target_date: string;
@@ -10,7 +9,6 @@ export type AlertRow = {
 
 type ContractDateData = {
   id: string;
-  user_id: string;
   expiry_date: string | null;
   renewal_date: string | null;
   effective_date: string | null;
@@ -29,7 +27,6 @@ function toISODate(d: Date): string {
 
 function tierAlerts(
   contractId: string,
-  userId: string,
   targetDateStr: string,
   today: Date
 ): AlertRow[] {
@@ -41,7 +38,6 @@ function tierAlerts(
   return tiers
     .map(({ type, offset }) => ({
       contract_id: contractId,
-      user_id: userId,
       alert_type: type,
       scheduled_for: toISODate(addDays(targetDateStr, offset)),
       target_date: targetDateStr,
@@ -54,16 +50,16 @@ export function buildAlerts(contract: ContractDateData, today?: Date): AlertRow[
   const todayStart = new Date(today ?? new Date());
   todayStart.setUTCHours(0, 0, 0, 0);
 
-  const { id, user_id, expiry_date, renewal_date, effective_date, notice_period_days } = contract;
+  const { id, expiry_date, renewal_date, effective_date, notice_period_days } = contract;
   const alerts: AlertRow[] = [];
 
   if (expiry_date) {
-    alerts.push(...tierAlerts(id, user_id, expiry_date, todayStart));
+    alerts.push(...tierAlerts(id, expiry_date, todayStart));
   }
 
   // Renewal alerts: when renewal_date is present and distinct from expiry_date (or expiry is null)
   if (renewal_date && renewal_date !== expiry_date) {
-    alerts.push(...tierAlerts(id, user_id, renewal_date, todayStart));
+    alerts.push(...tierAlerts(id, renewal_date, todayStart));
   }
 
   if (notice_period_days && expiry_date) {
@@ -79,7 +75,6 @@ export function buildAlerts(contract: ContractDateData, today?: Date): AlertRow[
     if (!disqualifiedByEffectiveDate && scheduledDate > todayStart) {
       alerts.push({
         contract_id: id,
-        user_id: user_id,
         alert_type: "notice_deadline",
         scheduled_for: toISODate(scheduledDate),
         target_date: toISODate(deadlineDate),
