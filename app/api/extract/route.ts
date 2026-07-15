@@ -1,6 +1,8 @@
 import { NextResponse, after } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { eq, sql } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { contracts, contractExtractions, activityLog } from "@/lib/db/schema";
+import { requireUser } from "@/lib/auth/session";
 import { z } from "zod";
 
 const extractSchema = z.object({
@@ -9,7 +11,6 @@ const extractSchema = z.object({
   party_b: z.string().max(200).nullable().optional(),
 });
 
-export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL ?? "http://localhost:8000";
@@ -150,8 +151,7 @@ export async function POST(request: Request) {
     throw new Error("PYTHON_SERVICE_URL must be set in production");
   }
 
-  const sessionClient = await createClient();
-  const { data: { user } } = await sessionClient.auth.getUser();
+  const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const userId = user.id;
@@ -163,37 +163,23 @@ export async function POST(request: Request) {
   }
   const { contract_id, party_a, party_b } = parsed.data;
 
-  const { data: contract, error: contractError } = await sessionClient
-    .from("contracts")
-    .select("id, status, file_path, file_name, party_a, party_b")
-    .eq("id", contract_id)
-    .single();
-  if (contractError || !contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+  const contract = await db.query.contracts.findFirst({ where: eq(contracts.id, contract_id) });
+  if (!contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
   if (["draft", "active"].includes(contract.status)) {
     return NextResponse.json({ error: "Already processed" }, { status: 409 });
   }
-  if (!contract.file_path) return NextResponse.json({ error: "No file attached" }, { status: 422 });
+  if (!contract.filePath) return NextResponse.json({ error: "No file attached" }, { status: 422 });
 
-  const adminClient = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-  const { data: signedData, error: signError } = await adminClient.storage
-    .from("contracts")
-    .createSignedUrl(contract.file_path, 600);
-  if (signError || !signedData) {
-    return NextResponse.json({ error: "Could not generate file URL" }, { status: 500 });
-  }
+  const filePath = contract.filePath;
 
-  await sessionClient.from("contracts").update({
-    party_a: party_a ?? contract.party_a ?? null,
-    party_b: party_b ?? contract.party_b ?? null,
+  await db.update(contracts).set({
+    partyA: party_a ?? contract.partyA ?? null,
+    partyB: party_b ?? contract.partyB ?? null,
     status: "processing",
-  }).eq("id", contract_id).eq("user_id", userId);
+  }).where(eq(contracts.id, contract_id));
 
-  const resolvedPartyA = party_a ?? contract.party_a ?? null;
-  const resolvedPartyB = party_b ?? contract.party_b ?? null;
-  const signedUrl = signedData.signedUrl;
+  const resolvedPartyA = party_a ?? contract.partyA ?? null;
+  const resolvedPartyB = party_b ?? contract.partyB ?? null;
 
   after(async () => {
     let extractionResult: JsonObject = { error: "extraction_failed" };
@@ -204,7 +190,7 @@ export async function POST(request: Request) {
     let fieldComparison: ReturnType<typeof buildFieldComparison> | null = null;
 
     const v2Result = await callPythonExtraction("/extract-v2/start", {
-      file_url: signedUrl,
+      file_path: filePath,
       thread_id: contract_id,
     });
 
@@ -227,7 +213,7 @@ export async function POST(request: Request) {
 
     if (ENABLE_LEGACY_COMPARISON || ("error" in extractionResult && !("fields" in extractionResult))) {
       const legacyResult = await callPythonExtraction("/extract", {
-        file_url: signedUrl,
+        file_path: filePath,
         contract_id,
         party_a: resolvedPartyA,
         party_b: resolvedPartyB,
@@ -267,29 +253,30 @@ export async function POST(request: Request) {
 
     if (!failed) {
       const rows = UPSERT_FIELDS.map((field) => ({
-        contract_id,
-        field_name: field,
-        extracted_value: fields[field] != null ? String(fields[field]) : null,
-        confirmed_value: null,
+        contractId: contract_id,
+        fieldName: field,
+        extractedValue: fields[field] != null ? String(fields[field]) : null,
+        confirmedValue: null,
         confidence,
-        was_edited: false,
+        wasEdited: false,
       }));
-      await adminClient.from("contract_extractions").upsert(rows, {
-        onConflict: "contract_id,field_name",
+      await db.insert(contractExtractions).values(rows).onConflictDoUpdate({
+        target: [contractExtractions.contractId, contractExtractions.fieldName],
+        set: { extractedValue: sql`excluded.extracted_value` },
       });
     }
 
-    await adminClient.from("contracts").update({
-      extraction_status: extractionStatus,
-      extraction_confidence: failed ? null : confidence,
+    await db.update(contracts).set({
+      extractionStatus: extractionStatus,
+      extractionConfidence: failed ? null : confidence,
       status: "draft",
-      updated_at: new Date().toISOString(),
-    }).eq("id", contract_id);
+      updatedAt: new Date(),
+    }).where(eq(contracts.id, contract_id));
 
-    await adminClient.from("activity_log").insert({
-      user_id: userId,
-      contract_id,
-      event_type: "extraction_complete",
+    await db.insert(activityLog).values({
+      userId: userId,
+      contractId: contract_id,
+      eventType: "extraction_complete",
       metadata: {
         pipeline_version: "langgraph_v2",
         extraction_engine: extractionEngine,

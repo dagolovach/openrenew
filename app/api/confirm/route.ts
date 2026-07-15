@@ -1,14 +1,15 @@
 // app/api/confirm/route.ts
 import { NextResponse, after } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { eq, and, sql } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { contracts, contractExtractions, alerts as alertsTable, activityLog } from "@/lib/db/schema";
+import { requireUser } from "@/lib/auth/session";
 import { buildAlerts } from "@/lib/alerts";
 import { triggerAnalysis } from "@/lib/analysis";
 import { z } from "zod";
 import { validateDateOrder } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
 
 const VALID_CATEGORIES = ["saas", "lease", "vendor", "employment", "other"] as const;
 
@@ -28,8 +29,7 @@ const confirmSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const sessionClient = await createClient();
-  const { data: { user } } = await sessionClient.auth.getUser();
+  const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const userId = user.id;
 
@@ -40,28 +40,26 @@ export async function POST(request: Request) {
   }
   const { contract_id, name, category, fields } = parsed.data;
 
-  const { data: contract, error: contractError } = await sessionClient
-    .from("contracts")
-    .select("id, status, file_path, expiry_date, renewal_date, effective_date, notice_period_days, parent_contract_id")
-    .eq("id", contract_id)
-    .single();
+  const contract = await db.query.contracts.findFirst({ where: eq(contracts.id, contract_id) });
 
-  if (contractError || !contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+  if (!contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
 
   // Upsert extractions (confidence metadata row is blocked by VALID_FIELDS check above)
   const extractionRows = Object.entries(fields as Record<string, unknown>).map(
     ([fieldName, value]) => ({
-      contract_id,
-      field_name: fieldName,
-      confirmed_value: value != null ? String(value) : null,
+      contractId: contract_id,
+      fieldName: fieldName,
+      confirmedValue: value != null ? String(value) : null,
     })
   );
 
   if (extractionRows.length > 0) {
-    const { error: upsertError } = await sessionClient
-      .from("contract_extractions")
-      .upsert(extractionRows, { onConflict: "contract_id,field_name" });
-    if (upsertError) {
+    try {
+      await db.insert(contractExtractions).values(extractionRows).onConflictDoUpdate({
+        target: [contractExtractions.contractId, contractExtractions.fieldName],
+        set: { confirmedValue: sql`excluded.confirmed_value` },
+      });
+    } catch (upsertError) {
       console.error("Upsert error:", upsertError);
       return NextResponse.json({ error: "Failed to save field values" }, { status: 500 });
     }
@@ -74,16 +72,17 @@ export async function POST(request: Request) {
   // Fallback: derive from contract_value string ÷ contract term in years.
   let computedAnnualValue: number | null = null;
 
-  const { data: annualValueRow, error: avError } = await sessionClient
-    .from("contract_extractions")
-    .select("extracted_value, confirmed_value")
-    .eq("contract_id", contract_id)
-    .eq("field_name", "annual_value")
-    .maybeSingle();
-  if (avError) console.error("[confirm] annual_value extraction query failed:", avError);
+  let annualValueRow: { extractedValue: string | null; confirmedValue: string | null } | undefined;
+  try {
+    annualValueRow = await db.query.contractExtractions.findFirst({
+      where: and(eq(contractExtractions.contractId, contract_id), eq(contractExtractions.fieldName, "annual_value")),
+    });
+  } catch (avError) {
+    console.error("[confirm] annual_value extraction query failed:", avError);
+  }
 
   if (annualValueRow) {
-    const raw = annualValueRow.confirmed_value ?? annualValueRow.extracted_value;
+    const raw = annualValueRow.confirmedValue ?? annualValueRow.extractedValue;
     const parsed = raw != null ? parseFloat(raw) : NaN;
     if (!isNaN(parsed) && parsed > 0) computedAnnualValue = parsed;
   }
@@ -91,8 +90,8 @@ export async function POST(request: Request) {
   // Fallback: parse numeric portion of contract_value ÷ years
   if (computedAnnualValue === null) {
     const cvRaw = f.contract_value != null ? String(f.contract_value) : null;
-    const effectiveStr = f.effective_date ? String(f.effective_date) : (contract.effective_date ?? null);
-    const expiryStr   = f.expiry_date   ? String(f.expiry_date)   : (contract.expiry_date   ?? null);
+    const effectiveStr = f.effective_date ? String(f.effective_date) : (contract.effectiveDate ?? null);
+    const expiryStr   = f.expiry_date   ? String(f.expiry_date)   : (contract.expiryDate   ?? null);
 
     if (cvRaw && effectiveStr && expiryStr) {
       const numericStr = cvRaw.replace(/[^0-9.]/g, "");
@@ -112,26 +111,23 @@ export async function POST(request: Request) {
   const noticePeriodDays = noticePeriodDaysParsed != null && !isNaN(noticePeriodDaysParsed) ? noticePeriodDaysParsed : null;
 
   // Update contracts row BEFORE generating alerts (makes 409 guard effective on retries)
-  const hasFile = !!contract.file_path;
+  const hasFile = !!contract.filePath;
 
-  const { error: updateError } = await sessionClient
-    .from("contracts")
-    .update({
-      name, category: (f.category ?? category) as string, status: hasFile ? "analyzing" : "active", updated_at: new Date().toISOString(),
-      expiry_date: f.expiry_date ? String(f.expiry_date) : null,
-      renewal_date: f.renewal_date ? String(f.renewal_date) : null,
-      effective_date: f.effective_date ? String(f.effective_date) : null,
-      auto_renew: autoRenew,
-      notice_period_days: noticePeriodDays,
-      notice_period_text: f.notice_period_text != null ? String(f.notice_period_text) : null,
-      party_a: f.party_a != null ? String(f.party_a) : null,
-      party_b: f.party_b != null ? String(f.party_b) : null,
-      contract_value: f.contract_value != null ? String(f.contract_value) : null,
-      ...(computedAnnualValue !== null ? { annual_value: computedAnnualValue } : {}),
-    })
-    .eq("id", contract_id);
-
-  if (updateError) {
+  try {
+    await db.update(contracts).set({
+      name, category: (f.category ?? category) as string, status: hasFile ? "analyzing" : "active", updatedAt: new Date(),
+      expiryDate: f.expiry_date ? String(f.expiry_date) : null,
+      renewalDate: f.renewal_date ? String(f.renewal_date) : null,
+      effectiveDate: f.effective_date ? String(f.effective_date) : null,
+      autoRenew: autoRenew,
+      noticePeriodDays: noticePeriodDays,
+      noticePeriodText: f.notice_period_text != null ? String(f.notice_period_text) : null,
+      partyA: f.party_a != null ? String(f.party_a) : null,
+      partyB: f.party_b != null ? String(f.party_b) : null,
+      contractValue: f.contract_value != null ? String(f.contract_value) : null,
+      ...(computedAnnualValue !== null ? { annualValue: computedAnnualValue } : {}),
+    }).where(eq(contracts.id, contract_id));
+  } catch (updateError) {
     console.error("Update error:", updateError);
     return NextResponse.json({ error: "Failed to update contract" }, { status: 500 });
   }
@@ -142,11 +138,10 @@ export async function POST(request: Request) {
   const coerceDate = (v: unknown): string | null => (v != null && v !== "" ? String(v) : null);
   const alertRows = buildAlerts({
     id: contract_id,
-    user_id: userId,
-    expiry_date: f.expiry_date !== undefined ? coerceDate(f.expiry_date) : (contract.expiry_date || null),
-    renewal_date: f.renewal_date !== undefined ? coerceDate(f.renewal_date) : (contract.renewal_date || null),
-    effective_date: f.effective_date !== undefined ? coerceDate(f.effective_date) : (contract.effective_date || null),
-    notice_period_days: noticePeriodDays ?? contract.notice_period_days ?? null,
+    expiry_date: f.expiry_date !== undefined ? coerceDate(f.expiry_date) : (contract.expiryDate || null),
+    renewal_date: f.renewal_date !== undefined ? coerceDate(f.renewal_date) : (contract.renewalDate || null),
+    effective_date: f.effective_date !== undefined ? coerceDate(f.effective_date) : (contract.effectiveDate || null),
+    notice_period_days: noticePeriodDays ?? contract.noticePeriodDays ?? null,
   });
 
   let alertCount = 0;
@@ -155,22 +150,34 @@ export async function POST(request: Request) {
     // Upsert on (contract_id, alert_type, target_date) is idempotent.
     // Deleting first creates a window where alerts are permanently lost if the upsert fails.
     // Tradeoff: stale alerts for old target_dates remain if user re-confirms with changed dates.
-    const { error: alertError } = await sessionClient
-      .from("alerts")
-      .upsert(alertRows, { onConflict: "contract_id,alert_type,target_date", ignoreDuplicates: true });
-    if (alertError) {
-      console.error("Alert upsert error (contract still confirmed):", alertError);
-    } else {
+    try {
+      await db.insert(alertsTable).values(
+        alertRows.map((r) => ({
+          contractId: r.contract_id,
+          alertType: r.alert_type,
+          scheduledFor: r.scheduled_for,
+          targetDate: r.target_date,
+          status: r.status,
+        }))
+      ).onConflictDoNothing({
+        target: [alertsTable.contractId, alertsTable.alertType, alertsTable.targetDate],
+      });
       alertCount = alertRows.length;
+    } catch (alertError) {
+      console.error("Alert upsert error (contract still confirmed):", alertError);
     }
   }
 
-  await sessionClient.from("activity_log").insert({
-    user_id: userId,
-    contract_id,
-    event_type: "contract_confirmed",
-    metadata: { contract_id, alert_count: alertCount },
-  });
+  try {
+    await db.insert(activityLog).values({
+      userId: userId,
+      contractId: contract_id,
+      eventType: "contract_confirmed",
+      metadata: { contract_id, alert_count: alertCount },
+    });
+  } catch (logError) {
+    console.error("[confirm] contract_confirmed activity log insert failed:", logError);
+  }
 
   // Log date order anomalies for extraction quality observability
   const dateWarnings = validateDateOrder({
@@ -179,13 +186,16 @@ export async function POST(request: Request) {
     expiry_date:    coerceDate(f.expiry_date),
   });
   if (dateWarnings.length > 0) {
-    const { error: warningLogError } = await sessionClient.from("activity_log").insert({
-      user_id: userId,
-      contract_id,
-      event_type: "date_order_warning",
-      metadata: { warnings: dateWarnings },
-    });
-    if (warningLogError) console.error("[confirm] date_order_warning insert failed:", warningLogError);
+    try {
+      await db.insert(activityLog).values({
+        userId: userId,
+        contractId: contract_id,
+        eventType: "date_order_warning",
+        metadata: { warnings: dateWarnings },
+      });
+    } catch (warningLogError) {
+      console.error("[confirm] date_order_warning insert failed:", warningLogError);
+    }
   }
 
   // Run analysis after responding — after() keeps the Vercel function alive up to maxDuration
@@ -199,32 +209,21 @@ export async function POST(request: Request) {
         return; // contract remains "analyzing" — polling timeout handles graceful fallback
       }
       // Mark contract active once analysis is complete
-      const adminClient = createAdminClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-      );
-      const { error } = await adminClient
-        .from("contracts")
-        .update({ status: "active" })
-        .eq("id", contract_id);
-      if (error) console.error("[confirm] Failed to mark contract active after analysis:", error);
+      try {
+        await db.update(contracts).set({ status: "active" }).where(eq(contracts.id, contract_id));
+      } catch (err) {
+        console.error("[confirm] Failed to mark contract active after analysis:", err);
+      }
     });
   }
 
   // Mark parent contract as expired and skip its pending alerts
-  if (contract.parent_contract_id) {
-    await sessionClient
-      .from("contracts")
-      .update({ status: "renewed" })
-      .eq("id", contract.parent_contract_id)
-      .eq("user_id", userId);
+  if (contract.parentContractId) {
+    await db.update(contracts).set({ status: "renewed" }).where(eq(contracts.id, contract.parentContractId));
 
-    await sessionClient
-      .from("alerts")
-      .update({ status: "skipped" })
-      .eq("contract_id", contract.parent_contract_id)
-      .eq("user_id", userId)
-      .eq("status", "pending");
+    await db.update(alertsTable).set({ status: "skipped" }).where(
+      and(eq(alertsTable.contractId, contract.parentContractId), eq(alertsTable.status, "pending"))
+    );
   }
 
   return NextResponse.json({ ok: true });
