@@ -2,6 +2,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
+// Duplicated from lib/auth/session.ts — importing it would pull @/lib/db into the edge runtime
 const SESSION_COOKIE = "openrenew_session";
 const PUBLIC_PATHS = ["/login", "/setup"];
 
