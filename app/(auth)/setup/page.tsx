@@ -1,12 +1,12 @@
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
-import LoginForm from './login-form'
+import SetupForm from './setup-form'
 
 export const dynamic = 'force-dynamic'
 
-export default async function LoginPage() {
+export default async function SetupPage() {
   const anyUser = await db.query.users.findFirst()
-  if (!anyUser) redirect('/setup')
+  if (anyUser) redirect('/login')
 
-  return <LoginForm />
+  return <SetupForm />
 }
