@@ -260,6 +260,8 @@ export async function POST(request: Request) {
         confidence,
         wasEdited: false,
       }));
+      // On re-extraction, refresh extractedValue only — user-confirmed values survive
+      // (deliberate change from the SaaS version, which reset the whole row)
       await db.insert(contractExtractions).values(rows).onConflictDoUpdate({
         target: [contractExtractions.contractId, contractExtractions.fieldName],
         set: { extractedValue: sql`excluded.extracted_value` },

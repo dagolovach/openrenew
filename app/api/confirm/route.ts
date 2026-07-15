@@ -198,7 +198,7 @@ export async function POST(request: Request) {
     }
   }
 
-  // Run analysis after responding — after() keeps the Vercel function alive up to maxDuration
+  // Run analysis after responding — after() keeps the request context alive until it settles
   // Manual contracts (no file_path) skip analysis and are already marked active above.
   if (hasFile) {
     after(async () => {
