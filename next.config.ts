@@ -37,6 +37,10 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        source: "/api/contracts/:id/pdf",
+        headers: [{ key: "X-Frame-Options", value: "SAMEORIGIN" }],
+      },
     ];
   },
 };
