@@ -16,6 +16,7 @@
     "@supabase/supabase-js": "^2.99.3",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
+    "jose": "^6.2.3",
     "next": "16.2.1",
     "nextjs-toploader": "^3.9.17",
     "pg": "^8.22.0",

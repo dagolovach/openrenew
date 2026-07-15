@@ -9,6 +9,10 @@ const config: Config = {
   },
   setupFiles: ['<rootDir>/jest.setup.ts'],
   testPathIgnorePatterns: ['/node_modules/', '/.worktrees/'],
+  transformIgnorePatterns: ['/node_modules/(?!(jose)/)'],
+  transform: {
+    '^.+\\.(t|j)sx?$': 'ts-jest',
+  },
 }
 
 export default config
