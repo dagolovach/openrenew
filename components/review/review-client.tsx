@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import FieldPanel from "./field-panel";
 import { isExpired, formatExpiredDate } from "@/lib/utils";
-import { Analytics } from "@/lib/analytics";
 
 type Contract = {
   id: string; name: string; file_name: string | null; category: string;
@@ -446,7 +445,6 @@ export default function ReviewClient({ contract, extractions, pdfUrl, isManual, 
         setError((await res.json().catch(() => ({}))).error ?? "Confirm failed");
         return;
       }
-      Analytics.contractConfirmed();
       router.push("/dashboard");
     } finally {
       setConfirming(false);

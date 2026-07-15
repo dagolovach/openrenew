@@ -9,7 +9,6 @@ import RenewalUploadButton from "./RenewalUploadButton";
 const ContractIntelligencePanel = dynamic(() => import("./ContractIntelligencePanel"), { ssr: false });
 const RenewalHistoryPanel = dynamic(() => import("./RenewalHistoryPanel"), { ssr: false });
 import { isExpired, daysUntil, activeExpiryDate } from "@/lib/utils";
-import type { SubscriptionTier } from "@/lib/subscription";
 
 export type Contract = {
   id: string;
@@ -150,7 +149,6 @@ function dateUrgencyColor(isoDate: string): string {
 export default function ContractDetailClient({
   contract,
   versionChain,
-  tier,
 }: {
   contract: Contract;
   versionChain: Array<{
@@ -163,7 +161,6 @@ export default function ContractDetailClient({
     created_at: string;
     parent_contract_id: string | null;
   }>;
-  tier: SubscriptionTier;
 }) {
   const contractExpired = isExpired(contract);
   const bandColors = heroBandColors(contract, contractExpired);
@@ -183,7 +180,6 @@ export default function ContractDetailClient({
   );
   const [annualValueSaved, setAnnualValueSaved] = useState<number | null>(null);
   const [editingAnnualValue, setEditingAnnualValue] = useState(false);
-  const [nudgeShown, setNudgeShown] = useState(false);
 
   // ── Delete handler ────────────────────────────────────────────────────────
   async function handleDelete() {
@@ -1005,34 +1001,6 @@ export default function ContractDetailClient({
               created_at: v.created_at,
             }))}
           />
-        )}
-
-        {/* ── Post-analysis nudge (free tier only, one-time per session) ── */}
-        {tier === "free" && !nudgeShown && (
-          <div
-            onMouseEnter={() => setNudgeShown(true)}
-            style={{
-              background: "#111827",
-              border: "1px solid rgba(255,255,255,0.06)",
-              borderRadius: "8px",
-              padding: "16px 20px",
-              marginTop: "16px",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "16px",
-            }}
-          >
-            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "13px", color: "#9CA3AF", margin: 0 }}>
-              OpenRenew Pro includes Slack alerts for every deadline, CSV export, and more.
-            </p>
-            <a href="/pricing" style={{
-              fontFamily: "var(--font-jetbrains), monospace", fontSize: "12px", fontWeight: 700,
-              color: "#10B981", textDecoration: "none", whiteSpace: "nowrap",
-            }}>
-              Learn more →
-            </a>
-          </div>
         )}
       </div>
     </div>

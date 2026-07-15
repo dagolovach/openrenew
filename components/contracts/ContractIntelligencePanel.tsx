@@ -2,7 +2,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, startTransition } from "react";
-import { Analytics } from "@/lib/analytics";
 
 export type Finding = {
   type: "warning" | "positive" | "info";
@@ -269,7 +268,6 @@ export default function ContractIntelligencePanel({
   const [panelDraft, setPanelDraft] = useState<PanelDraftState>({ mode: "findings" });
   const [copyEmailDone, setCopyEmailDone] = useState(false);
   const copyEmailTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const analysisViewedFired = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -358,10 +356,6 @@ export default function ContractIntelligencePanel({
                 setIsOpen(hasWarnings);
                 if (sorted.length > 0) {
                   setStatus("found");
-                  if (!analysisViewedFired.current) {
-                    analysisViewedFired.current = true;
-                    Analytics.analysisViewed(contractId);
-                  }
                 } else {
                   setStatus("empty");
                 }

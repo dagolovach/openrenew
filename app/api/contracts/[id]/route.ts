@@ -2,7 +2,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
-import { posthogClient, shutdownPosthog } from "@/lib/posthog";
 
 export async function DELETE(
   _request: NextRequest,
@@ -73,17 +72,6 @@ export async function DELETE(
       .gte("scheduled_for", today);
   }
 
-  try {
-    posthogClient.capture({
-      distinctId: user.id,
-      event: 'contract_deleted',
-      properties: { contract_id: contractId },
-    })
-    await shutdownPosthog()
-  } catch (e) {
-    console.error('[contracts/delete] PostHog capture failed:', e)
-  }
-
   return new Response(null, { status: 204 });
 }
 
@@ -116,17 +104,6 @@ export async function PATCH(
     .eq("user_id", user.id);
 
   if (error) return NextResponse.json({ error: "Update failed" }, { status: 500 });
-
-  try {
-    posthogClient.capture({
-      distinctId: user.id,
-      event: 'contract_updated',
-      properties: { contract_id: contractId, updated_fields: Object.keys(allowed) },
-    })
-    await shutdownPosthog()
-  } catch (e) {
-    console.error('[contracts/patch] PostHog capture failed:', e)
-  }
 
   return NextResponse.json({ ok: true });
 }

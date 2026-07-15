@@ -3,7 +3,6 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { buildAlertEmail, AlertWithContext, AlertType, EMAIL_FROM, EMAIL_REPLY_TO } from '@/lib/email';
 import { timingSafeEqual } from 'crypto';
-import { posthogClient, shutdownPosthog } from "@/lib/posthog";
 
 export async function GET(request: NextRequest) {
   // ── Startup assertions ─────────────────────────────────
@@ -147,24 +146,6 @@ export async function GET(request: NextRequest) {
             .update({ status: 'sent', sent_at: new Date().toISOString() })
             .eq('id', alertId);
           if (error) console.error(`Cron: failed to mark alert ${alertId} sent`, error);
-
-          try {
-            const alert = alertsWithContext[i];
-            const targetDate = alert.target_date ? new Date(alert.target_date) : null;
-            const daysUntilExpiry = targetDate
-              ? Math.ceil((targetDate.getTime() - new Date().getTime()) / 86400000)
-              : null;
-            posthogClient.capture({
-              distinctId: alert.user_id,
-              event: 'alert_email_sent',
-              properties: {
-                alert_type: alert.alert_type,
-                days_until_expiry: daysUntilExpiry,
-              },
-            });
-          } catch (e) {
-            console.error('[cron/send-alerts] PostHog capture failed:', e)
-          }
         } else {
           totalFailed++;
           const reason = String((result as PromiseRejectedResult).reason).slice(0, 500);
@@ -201,12 +182,6 @@ export async function GET(request: NextRequest) {
       hit_ceiling: totalProcessed >= MAX_ALERTS_PER_RUN,
     },
   });
-
-  try {
-    await shutdownPosthog()
-  } catch (e) {
-    console.error('[cron/send-alerts] PostHog shutdown failed:', e)
-  }
 
   return NextResponse.json({ sent: totalSent, failed: totalFailed, total: totalProcessed });
 }

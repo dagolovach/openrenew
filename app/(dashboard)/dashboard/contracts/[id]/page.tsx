@@ -4,7 +4,6 @@ import { redirect, notFound } from "next/navigation";
 import { getUserFromHeader } from "@/lib/supabase/user-from-header";
 import ContractDetailClient from "@/components/contracts/ContractDetailClient";
 import type { Contract } from "@/components/contracts/ContractDetailClient";
-import { getUserTier } from "@/lib/subscription";
 
 export const dynamic = "force-dynamic";
 
@@ -80,7 +79,6 @@ export default async function ContractDetailPage({ params }: Params) {
   const user = await getUserFromHeader();
   if (!user) redirect("/login");
   const supabase = await createClient();
-  const tier = await getUserTier(user.id);
 
   const { data: contract, error } = await supabase
     .from("contracts")
@@ -95,5 +93,5 @@ export default async function ContractDetailPage({ params }: Params) {
 
   const versionChain = await getVersionChain(supabase, contractId, user.id);
 
-  return <ContractDetailClient contract={contract as unknown as Contract} versionChain={versionChain} tier={tier} />;
+  return <ContractDetailClient contract={contract as unknown as Contract} versionChain={versionChain} />;
 }

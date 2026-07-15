@@ -2,10 +2,8 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getUserFromHeader } from "@/lib/supabase/user-from-header";
-import { getUserTier } from "@/lib/subscription";
 import { createClient } from "@/lib/supabase/server";
 import UploadZone from "@/components/dashboard/upload-zone";
-import NewSignupTracker from "@/components/dashboard/new-signup-tracker";
 import DashboardNav from "@/components/dashboard/dashboard-nav";
 import DashboardMetrics from "@/components/dashboard/DashboardMetrics";
 import ContractsFeed from "./contracts-feed";
@@ -20,8 +18,6 @@ export default async function DashboardPage() {
   const user = await getUserFromHeader();
   if (!user) redirect("/login");
 
-  const tier = await getUserTier(user.id);
-
   const supabase = await createClient();
   // eslint-disable-next-line react-hooks/purity
   const renderKey = Date.now();
@@ -34,9 +30,7 @@ export default async function DashboardPage() {
   return (
     <div style={{ fontFamily: "var(--font-inter), system-ui, sans-serif", color: "#F9FAFB" }}>
       {/* ── Header ─────────────────────────────────────────── */}
-      <DashboardNav userEmail={user.email ?? ""} userId={user.id} />
-
-      <NewSignupTracker />
+      <DashboardNav userEmail={user.email ?? ""} />
 
       {/* ── Main content ───────────────────────────────────── */}
       <main style={{ maxWidth: "900px", margin: "0 auto", padding: "32px 24px" }}>
@@ -46,7 +40,7 @@ export default async function DashboardPage() {
 
         {/* ── Upload zone ────────────────────────────────── */}
         <div style={{ marginBottom: "24px" }}>
-          <UploadZone tier={tier} contractCount={contractCount ?? 0} />
+          <UploadZone contractCount={contractCount ?? 0} />
         </div>
 
         {/* ── Contract list (streams in after shell renders) ── */}

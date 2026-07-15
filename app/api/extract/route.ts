@@ -2,8 +2,6 @@ import { NextResponse, after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { extractLimiter } from "@/lib/ratelimit";
-import { posthogClient, shutdownPosthog } from "@/lib/posthog";
 
 const extractSchema = z.object({
   contract_id: z.string().uuid("contract_id must be a valid UUID"),
@@ -156,11 +154,6 @@ export async function POST(request: Request) {
   const { data: { user } } = await sessionClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { success: rateLimitOk } = await extractLimiter.limit(user.id);
-  if (!rateLimitOk) {
-    return NextResponse.json({ error: "Too many requests. Please wait before trying again." }, { status: 429 });
-  }
-
   const userId = user.id;
 
   const body = await request.json();
@@ -201,7 +194,6 @@ export async function POST(request: Request) {
   const resolvedPartyA = party_a ?? contract.party_a ?? null;
   const resolvedPartyB = party_b ?? contract.party_b ?? null;
   const signedUrl = signedData.signedUrl;
-  const extractionStart = Date.now();
 
   after(async () => {
     let extractionResult: JsonObject = { error: "extraction_failed" };
@@ -316,34 +308,6 @@ export async function POST(request: Request) {
       },
     });
 
-    try {
-      if (failed) {
-        posthogClient.capture({
-          distinctId: userId,
-          event: "extraction_failed",
-          properties: {
-            contract_id,
-            error_type: normalizeScalar(extractionResult.error) ?? "unknown",
-            extraction_engine: extractionEngine,
-          },
-        });
-      } else {
-        posthogClient.capture({
-          distinctId: userId,
-          event: "extraction_completed",
-          properties: {
-            contract_id,
-            confidence,
-            duration_ms: Date.now() - extractionStart,
-            extraction_engine: extractionEngine,
-            v2_status: normalizeScalar(extractionResult.v2_status),
-          },
-        });
-      }
-      await shutdownPosthog();
-    } catch (e) {
-      console.error("[extract] PostHog capture failed:", e);
-    }
   });
 
   return NextResponse.json({ status: "processing", contract_id });

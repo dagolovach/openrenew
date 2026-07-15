@@ -14,13 +14,12 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, email, slack_webhook_url')
+    .select('email, slack_webhook_url')
     .eq('id', user.id)
     .single()
 
   return (
     <SettingsClient
-      plan={profile?.plan ?? 'free'}
       email={profile?.email ?? user.email ?? ''}
       slackWebhookUrl={profile?.slack_webhook_url ?? null}
     />

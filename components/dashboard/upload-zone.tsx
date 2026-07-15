@@ -4,8 +4,6 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { SubscriptionTier } from "@/lib/subscription";
-import { Analytics } from "@/lib/analytics";
 
 type DetectedParties = {
   party_a: string | null;
@@ -17,16 +15,14 @@ type State =
   | { status: "idle" }
   | { status: "uploading" }
   | { status: "confirming"; contractId: string; detected: DetectedParties }
-  | { status: "error"; message: string }
-  | { status: "limit_reached" };
+  | { status: "error"; message: string };
 
-export default function UploadZone({ tier, contractCount }: { tier: SubscriptionTier; contractCount: number }) {
+export default function UploadZone({ contractCount }: { contractCount: number }) {
   const [state, setState] = useState<State>({ status: "idle" });
   const [isDragOver, setIsDragOver] = useState(false);
   const [partyA, setPartyA] = useState("");
   const [partyB, setPartyB] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [contractsRemaining, setContractsRemaining] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
@@ -63,19 +59,11 @@ export default function UploadZone({ tier, contractCount }: { tier: Subscription
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: "Upload failed" }));
-      if (res.status === 403 && body.error === 'free_tier_limit') {
-        setState({ status: "limit_reached" });
-        return;
-      }
       setState({ status: "error", message: body.error ?? "Upload failed" });
       return;
     }
 
-    const { contract_id, detected_parties, contracts_remaining } = await res.json();
-    if (typeof contracts_remaining === "number") {
-      setContractsRemaining(contracts_remaining);
-    }
-    Analytics.contractUploaded();
+    const { contract_id, detected_parties } = await res.json();
     setPartyA(detected_parties?.party_a ?? "");
     setPartyB(detected_parties?.party_b ?? "");
     setState({
@@ -363,37 +351,6 @@ export default function UploadZone({ tier, contractCount }: { tier: Subscription
         ) : (
           // FULL LAYOUT
           <>
-            {/* Contracts remaining banner — only for free tier */}
-            {tier === "free" && contractsRemaining !== null && contractsRemaining <= 5 && contractsRemaining > 0 && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  position: "absolute",
-                  bottom: "-48px",
-                  left: 0,
-                  right: 0,
-                  background: "#111827",
-                  borderLeft: "3px solid #D97706",
-                  borderRadius: "0 0 6px 6px",
-                  padding: "8px 14px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "#D1D5DB" }}>
-                  You have {contractsRemaining} free contract{contractsRemaining !== 1 ? "s" : ""} remaining.
-                </span>
-                <Link
-                  href="/pricing"
-                  onClick={(e) => e.stopPropagation()}
-                  style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "#10B981", textDecoration: "underline", whiteSpace: "nowrap" }}
-                >
-                  Upgrade to Pro →
-                </Link>
-              </div>
-            )}
-
             {/* Upload arrow icon — hidden while uploading */}
             {state.status !== "uploading" && (
               <div style={{ marginBottom: "10px" }}>
@@ -458,18 +415,6 @@ export default function UploadZone({ tier, contractCount }: { tier: Subscription
                     {state.message}
                   </p>
                 )}
-                {state.status === "limit_reached" && (
-                  <p style={{ fontSize: "12px", color: "#F59E0B", marginTop: "8px", textAlign: "center" }}>
-                    You&apos;ve reached 20 contracts — the free tier limit.{" "}
-                    <Link
-                      href="/pricing"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ color: "#10B981", textDecoration: "underline" }}
-                    >
-                      See pricing →
-                    </Link>
-                  </p>
-                )}
                 <p style={{ fontSize: "13px", color: "#6B7280", marginTop: "12px", textAlign: "center" }}>
                   Don&apos;t have a PDF?{" "}
                   <Link
@@ -487,32 +432,6 @@ export default function UploadZone({ tier, contractCount }: { tier: Subscription
           </>
         )}
       </div>
-
-      {/* Contracts remaining banner — below the row in compact mode */}
-      {isCompact && tier === "free" && contractsRemaining !== null && contractsRemaining <= 5 && contractsRemaining > 0 && (
-        <div
-          style={{
-            background: "#111827",
-            borderLeft: "3px solid #D97706",
-            borderRadius: "0 0 6px 6px",
-            padding: "8px 14px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginTop: "2px",
-          }}
-        >
-          <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "#D1D5DB" }}>
-            You have {contractsRemaining} free contract{contractsRemaining !== 1 ? "s" : ""} remaining.
-          </span>
-          <Link
-            href="/pricing"
-            style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "#10B981", textDecoration: "underline", whiteSpace: "nowrap" }}
-          >
-            Upgrade to Pro →
-          </Link>
-        </div>
-      )}
     </div>
   );
 }

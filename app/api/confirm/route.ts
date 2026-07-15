@@ -6,7 +6,6 @@ import { buildAlerts } from "@/lib/alerts";
 import { triggerAnalysis } from "@/lib/analysis";
 import { z } from "zod";
 import { validateDateOrder } from "@/lib/utils";
-import { posthogClient, shutdownPosthog } from "@/lib/posthog";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -226,17 +225,6 @@ export async function POST(request: Request) {
       .eq("contract_id", contract.parent_contract_id)
       .eq("user_id", userId)
       .eq("status", "pending");
-  }
-
-  try {
-    posthogClient.capture({
-      distinctId: userId,
-      event: 'contract_confirmed',
-      properties: { contract_id },
-    })
-    await shutdownPosthog()
-  } catch (e) {
-    console.error('[confirm] PostHog capture failed:', e)
   }
 
   return NextResponse.json({ ok: true });

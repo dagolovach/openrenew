@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono, Inter } from "next/font/google";
 import NextTopLoader from "nextjs-toploader";
-import PostHogProvider from "@/components/PostHogProvider";
-import PostHogPageView from "@/components/PostHogPageView";
 import "./globals.css";
 
 const jetbrainsMono = JetBrains_Mono({
@@ -91,10 +89,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <NextTopLoader color="#10B981" showSpinner={false} height={2} />
-        <PostHogProvider>
-          {children}
-          <PostHogPageView />
-        </PostHogProvider>
+        {children}
       </body>
     </html>
   );

@@ -3,13 +3,11 @@
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import posthog from "posthog-js";
 import { Logo } from "@/components/ui/Logo";
 import LogoutButton from "@/components/dashboard/logout-button";
 
 interface DashboardNavProps {
   userEmail: string;
-  userId: string;
 }
 
 const NAV_LINKS = [
@@ -18,7 +16,7 @@ const NAV_LINKS = [
   { href: "/dashboard/settings", label: "Settings", exact: false },
 ];
 
-export default function DashboardNav({ userEmail, userId }: DashboardNavProps) {
+export default function DashboardNav({ userEmail }: DashboardNavProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
 
@@ -34,12 +32,6 @@ export default function DashboardNav({ userEmail, userId }: DashboardNavProps) {
     document.body.style.overflow = menuOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [menuOpen]);
-
-  useEffect(() => {
-    if (userId) {
-      posthog.identify(userId, { email: userEmail });
-    }
-  }, [userId, userEmail]);
 
   function isActive(href: string, exact: boolean) {
     return exact ? pathname === href : pathname.startsWith(href);

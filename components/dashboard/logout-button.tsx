@@ -3,13 +3,11 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import posthog from "posthog-js";
 
 export default function LogoutButton() {
   const router = useRouter();
 
   async function handleLogout() {
-    posthog.reset();
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");

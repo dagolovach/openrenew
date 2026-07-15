@@ -36,7 +36,7 @@ export default async function CalendarPage() {
       fontFamily: 'var(--font-inter), system-ui, sans-serif',
       color: '#F9FAFB',
     }}>
-      <DashboardNav userEmail={user.email ?? ''} userId={user.id} />
+      <DashboardNav userEmail={user.email ?? ''} />
       <main style={{
         flex: 1,
         minHeight: 0,
