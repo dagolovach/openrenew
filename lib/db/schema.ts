@@ -35,6 +35,8 @@ export const contracts = pgTable("contracts", {
   annualValue: real("annual_value"),
   parentContractId: uuid("parent_contract_id"),
   contractVersion: integer("contract_version").notNull().default(1),
+  snoozedUntil: date("snoozed_until"),
+  renewalDecision: text("renewal_decision"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
