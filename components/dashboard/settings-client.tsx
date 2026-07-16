@@ -1,7 +1,7 @@
 // components/dashboard/settings-client.tsx
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Logo } from '@/components/ui/Logo'
 import LogoutButton from '@/components/dashboard/logout-button'
@@ -9,12 +9,57 @@ import LogoutButton from '@/components/dashboard/logout-button'
 interface Props {
   email: string
   slackWebhookUrl: string | null
+  icalUrl: string
+  isAdmin: boolean
 }
 
-export default function SettingsClient({ email, slackWebhookUrl }: Props) {
+export default function SettingsClient({ email, slackWebhookUrl, icalUrl, isAdmin }: Props) {
   const [slackUrl, setSlackUrl] = useState(slackWebhookUrl ?? '')
   const [slackStatus, setSlackStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [slackError, setSlackError] = useState('')
+
+  const [feedUrl, setFeedUrl] = useState(icalUrl)
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle')
+  const [regenerateConfirming, setRegenerateConfirming] = useState(false)
+  const [regenerateStatus, setRegenerateStatus] = useState<'idle' | 'regenerating'>('idle')
+  const regenerateResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const regenerateSectionRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!regenerateConfirming) return
+    function handleClickOutside(e: MouseEvent) {
+      if (regenerateSectionRef.current && !regenerateSectionRef.current.contains(e.target as Node)) {
+        setRegenerateConfirming(false)
+      }
+    }
+    document.addEventListener('click', handleClickOutside, true)
+    return () => document.removeEventListener('click', handleClickOutside, true)
+  }, [regenerateConfirming])
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(feedUrl)
+    setCopyStatus('copied')
+    setTimeout(() => setCopyStatus('idle'), 2000)
+  }
+
+  async function handleRegenerateClick() {
+    if (!regenerateConfirming) {
+      setRegenerateConfirming(true)
+      if (regenerateResetTimer.current) clearTimeout(regenerateResetTimer.current)
+      regenerateResetTimer.current = setTimeout(() => setRegenerateConfirming(false), 5000)
+      return
+    }
+    if (regenerateResetTimer.current) clearTimeout(regenerateResetTimer.current)
+    setRegenerateStatus('regenerating')
+    const res = await fetch('/api/settings/ical-token', { method: 'POST' })
+    if (res.ok) {
+      const data = await res.json()
+      const url = feedUrl.split('?')[0] + `?token=${data.token}`
+      setFeedUrl(url)
+    }
+    setRegenerateStatus('idle')
+    setRegenerateConfirming(false)
+  }
 
   async function handleSlackSave() {
     setSlackStatus('saving')
@@ -136,6 +181,66 @@ export default function SettingsClient({ email, slackWebhookUrl }: Props) {
           >
             How to get a webhook URL ↗
           </a>
+        </div>
+
+        {/* Calendar feed */}
+        <div style={sectionStyle} ref={regenerateSectionRef}>
+          <p style={labelStyle}>Calendar Feed</p>
+          <p style={{ fontSize: '13px', color: '#6B7280', marginBottom: '12px' }}>
+            Subscribe in Google Calendar or Outlook to see every contract deadline.
+          </p>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+            <input
+              type="text"
+              value={feedUrl}
+              readOnly
+              style={{
+                flex: 1,
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '6px',
+                padding: '8px 12px',
+                fontSize: '13px',
+                color: '#F9FAFB',
+                outline: 'none',
+              }}
+            />
+            <button
+              onClick={handleCopy}
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                color: '#F9FAFB',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '6px',
+                padding: '8px 16px',
+                fontSize: '13px',
+                cursor: 'pointer',
+              }}
+            >
+              {copyStatus === 'copied' ? 'Copied ✓' : 'Copy'}
+            </button>
+          </div>
+          {isAdmin && (
+            <button
+              onClick={handleRegenerateClick}
+              disabled={regenerateStatus === 'regenerating'}
+              style={{
+                background: 'transparent',
+                color: regenerateConfirming ? '#EF4444' : '#6B7280',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '6px',
+                padding: '8px 16px',
+                fontSize: '13px',
+                cursor: regenerateStatus === 'regenerating' ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {regenerateStatus === 'regenerating'
+                ? 'Regenerating…'
+                : regenerateConfirming
+                ? 'This invalidates the old URL — click again to confirm'
+                : 'Regenerate URL'}
+            </button>
+          )}
         </div>
 
         {/* Danger zone */}
