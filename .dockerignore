@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+data
+.env*
+!.env.example
+python-service/__pycache__
+python-service/.venv*
+docs
+__tests__
+drizzle/meta/*.tmp
