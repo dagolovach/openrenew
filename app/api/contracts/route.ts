@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 // GET /api/contracts?ids=<uuid>,<uuid>,...
 // Used by the dashboard's client-side polling loop (components/dashboard/contract-list.tsx)
 // to check on in-progress extraction/analysis status. Returns the same snake_case shape
-// (including nested contract_extractions) the component previously received from Supabase.
+// (including nested contract_extractions) that the polling client expects.
 export async function GET(request: NextRequest) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

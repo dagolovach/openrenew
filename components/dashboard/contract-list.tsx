@@ -321,7 +321,7 @@ export default function ContractList({ initialContracts }: { initialContracts: C
         }
       }
 
-      // Always reschedule — loop runs continuously but only queries Supabase
+      // Always reschedule — loop runs continuously but only fetches
       // when there are processing contracts. This ensures contracts that
       // transition to "processing" after mount (e.g. via router.refresh()) are
       // picked up without needing to restart the effect.

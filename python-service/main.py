@@ -18,7 +18,7 @@ load_dotenv()
 EXTRACTION_SERVICE_SECRET = os.getenv("EXTRACTION_SERVICE_SECRET")
 
 ALLOWED_STORAGE_DOMAINS = [
-    d for d in [os.getenv("SUPABASE_STORAGE_DOMAIN", "")] if d
+    d for d in [os.getenv("ALLOWED_STORAGE_DOMAIN", "")] if d
 ]
 
 def validate_file_url(url: str) -> None:
@@ -48,7 +48,7 @@ def validate_file_url(url: str) -> None:
     except ValueError:
         pass  # Not an IP address, continue to domain check
 
-    # Allowlist is required — fail closed if SUPABASE_STORAGE_DOMAIN env var is not set
+    # Allowlist is required — fail closed if ALLOWED_STORAGE_DOMAIN env var is not set
     if not ALLOWED_STORAGE_DOMAINS:
         raise HTTPException(status_code=500, detail="Storage domain allowlist not configured")
     if not any(hostname == d or hostname.endswith(f'.{d}') for d in ALLOWED_STORAGE_DOMAINS):
@@ -619,8 +619,6 @@ async def extract(req: ExtractRequest, _: None = Depends(verify_auth)):
 
 @app.post("/extract-file")
 async def extract_file(file: UploadFile = File(...), contract_id: Optional[str] = None, _: None = Depends(verify_auth)):
-    if os.getenv("RAILWAY_ENVIRONMENT") == "production":
-        raise HTTPException(status_code=404, detail="Not found")
     return await _run_extraction(await file.read(), contract_id)
 
 
