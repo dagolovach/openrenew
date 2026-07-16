@@ -3,7 +3,6 @@
 
 import { useEffect, useRef, useState, useMemo, startTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import ContractCard, { CardState } from "./contract-card";
 import { isExpired, daysUntil, activeExpiryDate } from "@/lib/utils";
 
@@ -263,7 +262,6 @@ export default function ContractList({ initialContracts }: { initialContracts: C
       .filter((c) => c.status === "processing" || c.status === "analyzing")
       .forEach((c) => { if (!startTimes.current.has(c.id)) startTimes.current.set(c.id, Date.now()); });
 
-    const supabase = createClient();
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -284,10 +282,8 @@ export default function ContractList({ initialContracts }: { initialContracts: C
         .map((c) => c.id);
 
       if (pollIds.length > 0) {
-        const { data } = await supabase
-          .from("contracts")
-          .select("id, status, extraction_status, extraction_confidence, expiry_date, renewal_date, party_a, party_b, contract_value, notice_period_days, category, annual_value, updated_at, created_at, name, file_name, parent_contract_id, contract_extractions(confidence, confirmed_value, was_edited, field_name)")
-          .in("id", pollIds);
+        const res = await fetch(`/api/contracts?ids=${pollIds.join(",")}`);
+        const data = res.ok ? await res.json() : null;
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pollData = data as unknown as any[];

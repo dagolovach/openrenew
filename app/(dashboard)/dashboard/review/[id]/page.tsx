@@ -1,8 +1,9 @@
 // app/(dashboard)/dashboard/review/[id]/page.tsx
-import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { redirect, notFound } from "next/navigation";
-import { getUserFromHeader } from "@/lib/supabase/user-from-header";
+import { and, eq, ne } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { contractExtractions, contracts } from "@/lib/db/schema";
+import { getSessionUser } from "@/lib/auth/session";
 import ReviewClient from "@/components/review/review-client";
 
 export const dynamic = "force-dynamic";
@@ -18,62 +19,102 @@ export default async function ReviewPage({ params, searchParams }: Params) {
   const { manual } = await searchParams;
   const isManual = manual === "1";
 
-  const user = await getUserFromHeader();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
-  const supabase = await createClient();
 
-  const { data: contract, error } = await supabase
-    .from("contracts")
-    .select("id, name, file_name, category, status, extraction_status, extraction_confidence, file_path, expiry_date, renewal_date, effective_date, auto_renew, notice_period_days, notice_period_text, party_a, party_b, contract_value, parent_contract_id")
-    .eq("id", contractId)
-    .single();
+  const contract = await db.query.contracts.findFirst({
+    where: eq(contracts.id, contractId),
+    columns: {
+      id: true,
+      name: true,
+      fileName: true,
+      category: true,
+      status: true,
+      extractionStatus: true,
+      extractionConfidence: true,
+      filePath: true,
+      expiryDate: true,
+      renewalDate: true,
+      effectiveDate: true,
+      autoRenew: true,
+      noticePeriodDays: true,
+      noticePeriodText: true,
+      partyA: true,
+      partyB: true,
+      contractValue: true,
+      parentContractId: true,
+    },
+  });
 
-  if (error || !contract) notFound();
+  if (!contract) notFound();
 
-  // Fetch extractions and generate signed URL in parallel
-  const adminClient = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  // Fetch extractions
+  const extractionRows = await db.query.contractExtractions.findMany({
+    where: and(eq(contractExtractions.contractId, contractId), ne(contractExtractions.fieldName, "confidence")),
+    columns: { fieldName: true, extractedValue: true, confirmedValue: true, confidence: true, wasEdited: true },
+  });
 
-  const [extractionsRes, signedRes] = await Promise.all([
-    supabase
-      .from("contract_extractions")
-      .select("field_name, extracted_value, confirmed_value, confidence, was_edited")
-      .eq("contract_id", contractId)
-      .neq("field_name", "confidence"),
-    contract.file_path
-      ? adminClient.storage.from("contracts").createSignedUrl(contract.file_path, 600)
-      : Promise.resolve(null),
-  ]);
-
-  const extractions = extractionsRes.data;
-  const pdfUrl = signedRes && "data" in signedRes ? (signedRes.data?.signedUrl ?? null) : null;
+  const pdfUrl = contract.filePath ? `/api/contracts/${contractId}/pdf` : null;
 
   // Party names come from user input stored on the contract row, not AI extractions.
   // Inject synthetic rows so FieldPanel renders them as already-confirmed (blue).
   const partyExtractions = [
     {
       field_name: "party_a",
-      extracted_value: contract.party_a ?? null,
-      confirmed_value: contract.party_a ?? null,
+      extracted_value: contract.partyA ?? null,
+      confirmed_value: contract.partyA ?? null,
       confidence: 1.0,
       was_edited: false,
     },
     {
       field_name: "party_b",
-      extracted_value: contract.party_b ?? null,
-      confirmed_value: contract.party_b ?? null,
+      extracted_value: contract.partyB ?? null,
+      confirmed_value: contract.partyB ?? null,
       confidence: 1.0,
       was_edited: false,
     },
   ];
   const allExtractions = [
     ...partyExtractions,
-    ...(extractions ?? []).filter(
-      (e) => e.field_name !== "party_a" && e.field_name !== "party_b"
-    ),
+    ...extractionRows
+      .filter((e) => e.fieldName !== "party_a" && e.fieldName !== "party_b")
+      .map((e) => ({
+        field_name: e.fieldName,
+        extracted_value: e.extractedValue,
+        confirmed_value: e.confirmedValue,
+        confidence: e.confidence,
+        was_edited: e.wasEdited,
+      })),
   ];
 
-  return <ReviewClient contract={contract} extractions={allExtractions} pdfUrl={pdfUrl} isManual={isManual} parentContractId={contract.parent_contract_id ?? null} />;
+  const contractForClient = {
+    id: contract.id,
+    name: contract.name,
+    file_name: contract.fileName,
+    category: contract.category,
+    status: contract.status,
+    extraction_status: contract.extractionStatus,
+    extraction_confidence: contract.extractionConfidence,
+    file_path: contract.filePath,
+    expiry_date: contract.expiryDate,
+    renewal_date: contract.renewalDate,
+    effective_date: contract.effectiveDate,
+    auto_renew: contract.autoRenew,
+    notice_period_days: contract.noticePeriodDays,
+    notice_period_text: contract.noticePeriodText,
+    party_a: contract.partyA,
+    party_b: contract.partyB,
+    contract_value: contract.contractValue,
+    parent_contract_id: contract.parentContractId,
+  };
+
+  return (
+    <ReviewClient
+      contract={contractForClient}
+      extractions={allExtractions}
+      pdfUrl={pdfUrl}
+      isManual={isManual}
+      parentContractId={contract.parentContractId ?? null}
+    />
+  );
 }

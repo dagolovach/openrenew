@@ -1,6 +1,8 @@
-// app/(dashboard)/dashboard/calendar/page.tsx
-import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { asc, eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { contracts } from '@/lib/db/schema';
+import { getSessionUser } from '@/lib/auth/session';
 import { isExpired } from '@/lib/utils';
 import RenewalCalendar from '@/components/calendar/RenewalCalendar';
 import DashboardNav from '@/components/dashboard/dashboard-nav';
@@ -10,22 +12,40 @@ export const metadata = { title: 'Renewal Calendar — OpenRenew' };
 export const dynamic = 'force-dynamic';
 
 export default async function CalendarPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect('/login');
 
-  const { data: contracts } = await supabase
-    .from('contracts')
-    .select(`
-      id, name, party_a, category,
-      expiry_date, renewal_date, auto_renew,
-      notice_period_days, contract_value, status
-    `)
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .order('expiry_date', { ascending: true });
+  const rows = await db.query.contracts.findMany({
+    where: eq(contracts.status, 'active'),
+    orderBy: asc(contracts.expiryDate),
+    columns: {
+      id: true,
+      name: true,
+      partyA: true,
+      category: true,
+      expiryDate: true,
+      renewalDate: true,
+      autoRenew: true,
+      noticePeriodDays: true,
+      contractValue: true,
+      status: true,
+    },
+  });
 
-  const active = (contracts ?? []).filter(c => !isExpired(c));
+  const mapped = rows.map((c) => ({
+    id: c.id,
+    name: c.name,
+    party_a: c.partyA,
+    category: c.category,
+    expiry_date: c.expiryDate,
+    renewal_date: c.renewalDate,
+    auto_renew: c.autoRenew,
+    notice_period_days: c.noticePeriodDays,
+    contract_value: c.contractValue,
+    status: c.status,
+  }));
+
+  const active = mapped.filter(c => !isExpired(c));
 
   return (
     <div style={{

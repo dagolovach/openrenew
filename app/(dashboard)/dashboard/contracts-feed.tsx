@@ -1,67 +1,88 @@
 // app/(dashboard)/dashboard/contracts-feed.tsx
-import { createClient } from "@/lib/supabase/server";
+import { desc, inArray } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { contractExtractions, contracts } from "@/lib/db/schema";
 import ContractList from "@/components/dashboard/contract-list";
 import { RenewalTimeline } from "@/components/RenewalTimeline";
 import { isExpired } from "@/lib/utils";
 
-export default async function ContractsFeed({ userId }: { userId: string }) {
-  const supabase = await createClient();
+export default async function ContractsFeed() {
+  // Fetch contracts, then extractions for those contracts, and merge in JS
+  // (no left-join relation configured on the Drizzle schema).
+  const contractRows = await db.query.contracts.findMany({
+    orderBy: desc(contracts.createdAt),
+    columns: {
+      id: true,
+      name: true,
+      fileName: true,
+      status: true,
+      extractionStatus: true,
+      extractionConfidence: true,
+      expiryDate: true,
+      renewalDate: true,
+      partyA: true,
+      partyB: true,
+      contractValue: true,
+      noticePeriodDays: true,
+      category: true,
+      annualValue: true,
+      updatedAt: true,
+      createdAt: true,
+      parentContractId: true,
+    },
+  });
 
-  // Left join (no !inner) so processing contracts with no extractions are included
-  const { data: contracts, error: contractsError } = await supabase
-    .from("contracts")
-    .select(`
-      id, name, file_name, status, extraction_status, extraction_confidence,
-      expiry_date, renewal_date, party_a, party_b, contract_value, notice_period_days,
-      category, annual_value, updated_at, created_at, parent_contract_id,
-      contract_extractions(confidence, confirmed_value, was_edited, field_name)
-    `)
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
+  const contractIds = contractRows.map((c) => c.id);
+  const extractionRows = contractIds.length
+    ? await db.query.contractExtractions.findMany({
+        where: inArray(contractExtractions.contractId, contractIds),
+        columns: {
+          contractId: true,
+          fieldName: true,
+          confidence: true,
+          confirmedValue: true,
+          wasEdited: true,
+        },
+      })
+    : [];
 
-  if (contractsError)
-    console.error("[contracts-feed] query failed:", contractsError.message);
-
-  type ExtractionRow = {
-    field_name: string;
-    confidence: number | null;
-    confirmed_value: string | null;
-    was_edited: boolean | null;
-  };
-  type QueryRow = {
-    id: string;
-    name: string;
-    file_name: string | null;
-    status: string;
-    extraction_status: string;
-    extraction_confidence: number | null;
-    expiry_date: string | null;
-    renewal_date: string | null;
-    party_a: string | null;
-    party_b: string | null;
-    contract_value: string | null;
-    notice_period_days: number | null;
-    category: string | null;
-    annual_value: number | null;
-    updated_at: string;
-    created_at: string;
-    parent_contract_id: string | null;
-    contract_extractions: ExtractionRow[];
-  };
-
-  const rows = (contracts ?? []) as unknown as QueryRow[];
+  const extractionsByContract = new Map<string, typeof extractionRows>();
+  for (const e of extractionRows) {
+    const list = extractionsByContract.get(e.contractId) ?? [];
+    list.push(e);
+    extractionsByContract.set(e.contractId, list);
+  }
 
   // Compute unresolved amber/red count per contract from the joined data
-  const allWithCount = rows.map((c) => {
-    const { contract_extractions, ...rest } = c;
-    const unresolvedCount = contract_extractions.filter(
+  const allWithCount = contractRows.map((c) => {
+    const extractions = extractionsByContract.get(c.id) ?? [];
+    const unresolvedCount = extractions.filter(
       (e) =>
-        e.field_name !== "confidence" &&
+        e.fieldName !== "confidence" &&
         (e.confidence ?? 1) < 0.9 &&
-        e.confirmed_value === null &&
-        !e.was_edited
+        e.confirmedValue === null &&
+        !e.wasEdited
     ).length;
-    return { ...rest, unresolved_count: unresolvedCount };
+    return {
+      id: c.id,
+      name: c.name,
+      file_name: c.fileName,
+      status: c.status,
+      extraction_status: c.extractionStatus,
+      extraction_confidence: c.extractionConfidence,
+      expiry_date: c.expiryDate,
+      renewal_date: c.renewalDate,
+      party_a: c.partyA,
+      party_b: c.partyB,
+      contract_value: c.contractValue,
+      notice_period_days: c.noticePeriodDays,
+      category: c.category,
+      annual_value: c.annualValue,
+      updated_at: c.updatedAt.toISOString(),
+      created_at: c.createdAt.toISOString(),
+      parent_contract_id: c.parentContractId,
+      unresolved_count: unresolvedCount,
+    };
   });
 
   // Active (non-expired) contracts → timeline
@@ -121,4 +142,3 @@ export default async function ContractsFeed({ userId }: { userId: string }) {
     </>
   );
 }
-

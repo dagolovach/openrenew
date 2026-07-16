@@ -1,9 +1,5 @@
 // components/dashboard/DashboardMetrics.tsx
-"use client";
-
-import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 interface Metrics {
   contractsManaged: number;
@@ -88,74 +84,10 @@ function MetricCard({ icon, value, label, secondary }: MetricCardProps) {
 }
 
 interface Props {
-  userId: string;
-  refreshKey?: number;
+  metrics: Metrics;
 }
 
-export default function DashboardMetrics({ userId, refreshKey }: Props) {
-  const [metrics, setMetrics] = useState<Metrics | null>(null);
-
-  useEffect(() => {
-    let active = true;
-
-    async function load() {
-      const supabase = createClient();
-      const todayStr = new Date().toISOString().split("T")[0];
-
-      const [contractsRes, alertsRes] = await Promise.all([
-        supabase
-          .from("contracts")
-          .select("annual_value, status")
-          .eq("user_id", userId)
-          .eq("status", "active")
-          .or(`expiry_date.is.null,expiry_date.gte.${todayStr}`),
-        supabase
-          .from("alerts")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId)
-          .not("sent_at", "is", null),
-      ]);
-
-      if (!active) return;
-
-      const rows = (contractsRes.data ?? []) as unknown as { annual_value: number | null }[];
-      const contractsManaged = rows.length;
-      const parsedValues = rows
-        .map((c) => (c.annual_value != null && c.annual_value > 0 ? c.annual_value : null))
-        .filter((v): v is number => v !== null);
-      const totalSpend = parsedValues.reduce((a, b) => a + b, 0);
-      const trackedCount = parsedValues.length;
-
-      setMetrics({
-        contractsManaged,
-        alertsSent: alertsRes.count ?? 0,
-        totalSpend,
-        trackedCount,
-      });
-    }
-
-    load();
-
-    return () => {
-      active = false;
-    };
-  }, [userId, refreshKey]);
-
-  if (!metrics) {
-    return (
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: "12px",
-        marginBottom: "24px",
-      }}>
-        {[...Array(3)].map((_, i) => (
-          <div key={i} style={{ background: "#111827", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", height: "88px", opacity: 0.4 }} />
-        ))}
-      </div>
-    );
-  }
-
+export default function DashboardMetrics({ metrics }: Props) {
   const { contractsManaged, alertsSent, totalSpend, trackedCount } = metrics;
 
   return (

@@ -1,7 +1,9 @@
 // app/(dashboard)/dashboard/review/new/page.tsx
-import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { getUserFromHeader } from "@/lib/supabase/user-from-header";
+import { and, eq, gt } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { contractExtractions, contracts } from "@/lib/db/schema";
+import { getSessionUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -18,54 +20,54 @@ const MANUAL_FIELDS = [
 ] as const;
 
 export default async function ReviewNewPage() {
-  const user = await getUserFromHeader();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
-  const supabase = await createClient();
 
   // Dedup: reuse a stub created in the last 5 minutes
-  const { data: existing } = await supabase
-    .from("contracts")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("status", "draft")
-    .eq("extraction_status", "manual")
-    .eq("name", "New Contract")
-    .gt("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString())
-    .limit(1)
-    .maybeSingle();
+  const existing = await db.query.contracts.findFirst({
+    where: and(
+      eq(contracts.status, "draft"),
+      eq(contracts.extractionStatus, "manual"),
+      eq(contracts.name, "New Contract"),
+      gt(contracts.createdAt, new Date(Date.now() - 5 * 60 * 1000))
+    ),
+    columns: { id: true },
+  });
 
   if (existing) {
     redirect(`/dashboard/review/${existing.id}?manual=1`);
   }
 
   // Insert stub contract
-  const { data: contract, error } = await supabase
-    .from("contracts")
-    .insert({
-      user_id: user.id,
-      name: "New Contract",
-      category: "other",
-      status: "draft",
-      extraction_status: "manual",
-    })
-    .select("id")
-    .single();
-
-  if (error || !contract) {
+  let contractId: string;
+  try {
+    const [created] = await db
+      .insert(contracts)
+      .values({
+        createdBy: user.id,
+        name: "New Contract",
+        category: "other",
+        status: "draft",
+        extractionStatus: "manual",
+      })
+      .returning({ id: contracts.id });
+    contractId = created.id;
+  } catch (error) {
+    console.error("[review/new] Failed to create stub contract:", error);
     redirect("/dashboard");
   }
 
-  // Insert 8 empty extraction rows (contract_extractions has no user_id column)
-  const extractionRows = MANUAL_FIELDS.map((field_name) => ({
-    contract_id: contract.id,
-    field_name,
-    extracted_value: null,
-    confirmed_value: null,
+  // Insert 8 empty extraction rows (contract_extractions has no user scoping)
+  const extractionRows = MANUAL_FIELDS.map((fieldName) => ({
+    contractId,
+    fieldName,
+    extractedValue: null,
+    confirmedValue: null,
     confidence: null,
-    was_edited: false,
+    wasEdited: false,
   }));
 
-  await supabase.from("contract_extractions").insert(extractionRows);
+  await db.insert(contractExtractions).values(extractionRows);
 
-  redirect(`/dashboard/review/${contract.id}?manual=1`);
+  redirect(`/dashboard/review/${contractId}?manual=1`);
 }

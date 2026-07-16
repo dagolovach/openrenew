@@ -1,27 +1,22 @@
 // app/(dashboard)/dashboard/settings/page.tsx
-import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { getUserFromHeader } from '@/lib/supabase/user-from-header'
+import { getSessionUser } from '@/lib/auth/session'
+import { getSetting } from '@/lib/db/settings'
 import SettingsClient from '@/components/dashboard/settings-client'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Settings — OpenRenew' }
 
 export default async function SettingsPage() {
-  const user = await getUserFromHeader()
+  const user = await getSessionUser()
   if (!user) redirect('/login')
-  const supabase = await createClient()
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('email, slack_webhook_url')
-    .eq('id', user.id)
-    .single()
+  const slackWebhookUrl = await getSetting<string>('slack_webhook_url')
 
   return (
     <SettingsClient
-      email={profile?.email ?? user.email ?? ''}
-      slackWebhookUrl={profile?.slack_webhook_url ?? null}
+      email={user.email ?? ''}
+      slackWebhookUrl={slackWebhookUrl}
     />
   )
 }

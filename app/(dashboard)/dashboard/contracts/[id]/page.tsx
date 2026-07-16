@@ -1,7 +1,8 @@
-// app/(dashboard)/dashboard/contracts/[id]/page.tsx
-import { createClient } from "@/lib/supabase/server";
 import { redirect, notFound } from "next/navigation";
-import { getUserFromHeader } from "@/lib/supabase/user-from-header";
+import { eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { contracts } from "@/lib/db/schema";
+import { getSessionUser } from "@/lib/auth/session";
 import ContractDetailClient from "@/components/contracts/ContractDetailClient";
 import type { Contract } from "@/components/contracts/ContractDetailClient";
 
@@ -11,63 +12,72 @@ type Params = {
   params: Promise<{ id: string }>;
 };
 
-async function getVersionChain(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  contractId: string,
-  userId: string
-) {
+type ChainEntry = {
+  id: string;
+  name: string | null;
+  contract_version: number | null;
+  status: string | null;
+  expiry_date: string | null;
+  contract_value: string | null;
+  created_at: string;
+  parent_contract_id: string | null;
+};
+
+async function getVersionChain(contractId: string): Promise<ChainEntry[]> {
   // Walk up to find the root of the chain
   let rootId = contractId;
 
   let upwardSteps = 0;
   while (upwardSteps < 10) {
-    const { data } = await supabase
-      .from("contracts")
-      .select("id, parent_contract_id")
-      .eq("id", rootId)
-      .eq("user_id", userId)
-      .single();
+    const row = await db.query.contracts.findFirst({
+      where: eq(contracts.id, rootId),
+      columns: { id: true, parentContractId: true },
+    });
 
-    if (!data?.parent_contract_id) break;
-    rootId = data.parent_contract_id;
+    if (!row?.parentContractId) break;
+    rootId = row.parentContractId;
     upwardSteps++;
   }
 
   // Walk forward from root to build the chain (cap at 10)
-  const chain: Array<{
-    id: string;
-    name: string | null;
-    contract_version: number | null;
-    status: string | null;
-    expiry_date: string | null;
-    contract_value: string | null;
-    created_at: string;
-    parent_contract_id: string | null;
-  }> = [];
+  const chain: ChainEntry[] = [];
   let nextId: string | null = rootId;
 
   while (nextId !== null && chain.length < 10) {
     const currentId: string = nextId;
 
-    const { data: contract } = await supabase
-      .from("contracts")
-      .select("id, name, contract_version, status, expiry_date, contract_value, created_at, parent_contract_id")
-      .eq("id", currentId)
-      .eq("user_id", userId)
-      .single();
+    const contract = await db.query.contracts.findFirst({
+      where: eq(contracts.id, currentId),
+      columns: {
+        id: true,
+        name: true,
+        contractVersion: true,
+        status: true,
+        expiryDate: true,
+        contractValue: true,
+        createdAt: true,
+        parentContractId: true,
+      },
+    });
 
     if (!contract) break;
-    chain.push(contract);
+    chain.push({
+      id: contract.id,
+      name: contract.name,
+      contract_version: contract.contractVersion,
+      status: contract.status,
+      expiry_date: contract.expiryDate,
+      contract_value: contract.contractValue,
+      created_at: contract.createdAt.toISOString(),
+      parent_contract_id: contract.parentContractId,
+    });
 
-    const { data: childData } = await supabase
-      .from("contracts")
-      .select("id")
-      .eq("parent_contract_id", currentId)
-      .eq("user_id", userId)
-      .limit(1)
-      .maybeSingle();
+    const child = await db.query.contracts.findFirst({
+      where: eq(contracts.parentContractId, currentId),
+      columns: { id: true },
+    });
 
-    nextId = (childData as { id: string } | null)?.id ?? null;
+    nextId = child?.id ?? null;
   }
 
   return chain;
@@ -76,22 +86,57 @@ async function getVersionChain(
 export default async function ContractDetailPage({ params }: Params) {
   const { id: contractId } = await params;
 
-  const user = await getUserFromHeader();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
-  const supabase = await createClient();
 
-  const { data: contract, error } = await supabase
-    .from("contracts")
-    .select(
-      "id, name, file_name, party_a, party_b, category, effective_date, expiry_date, renewal_date, auto_renew, notice_period_days, notice_period_text, contract_value, extraction_confidence, status, parent_contract_id, contract_version, annual_value"
-    )
-    .eq("id", contractId)
-    .eq("user_id", user.id)
-    .single();
+  const contract = await db.query.contracts.findFirst({
+    where: eq(contracts.id, contractId),
+    columns: {
+      id: true,
+      name: true,
+      fileName: true,
+      partyA: true,
+      partyB: true,
+      category: true,
+      effectiveDate: true,
+      expiryDate: true,
+      renewalDate: true,
+      autoRenew: true,
+      noticePeriodDays: true,
+      noticePeriodText: true,
+      contractValue: true,
+      extractionConfidence: true,
+      status: true,
+      parentContractId: true,
+      contractVersion: true,
+      annualValue: true,
+    },
+  });
 
-  if (error || !contract) notFound();
+  if (!contract) notFound();
 
-  const versionChain = await getVersionChain(supabase, contractId, user.id);
+  const versionChain = await getVersionChain(contractId);
 
-  return <ContractDetailClient contract={contract as unknown as Contract} versionChain={versionChain} />;
+  const mapped: Contract = {
+    id: contract.id,
+    name: contract.name,
+    file_name: contract.fileName,
+    party_a: contract.partyA,
+    party_b: contract.partyB,
+    category: contract.category,
+    effective_date: contract.effectiveDate,
+    expiry_date: contract.expiryDate,
+    renewal_date: contract.renewalDate,
+    auto_renew: contract.autoRenew,
+    notice_period_days: contract.noticePeriodDays,
+    notice_period_text: contract.noticePeriodText,
+    contract_value: contract.contractValue,
+    extraction_confidence: contract.extractionConfidence,
+    status: contract.status,
+    parent_contract_id: contract.parentContractId,
+    contract_version: contract.contractVersion,
+    annual_value: contract.annualValue,
+  };
+
+  return <ContractDetailClient contract={mapped} versionChain={versionChain} />;
 }
