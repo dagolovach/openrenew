@@ -2,15 +2,17 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { and, eq, lte, notInArray } from "drizzle-orm";
+import { and, eq, inArray, lte, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { alerts as alertsTable, contracts } from "@/lib/db/schema";
+import { alerts as alertsTable, contractAnalysis, contracts } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/auth/session";
 import { getSetting } from "@/lib/db/settings";
 import { isSmtpConfigured } from "@/lib/email-smtp";
 import { aiEnabled } from "@/lib/ai";
+import { buildTriageQueue, nextUp, type TriageContract } from "@/lib/triage";
 import UploadZone from "@/components/dashboard/upload-zone";
 import DashboardNav from "@/components/dashboard/dashboard-nav";
+import TriageQueue from "@/components/dashboard/triage-queue";
 import ContractsFeed from "./contracts-feed";
 import ContractsFeedSkeleton from "@/components/dashboard/contracts-feed-skeleton";
 import "./dashboard.css";
@@ -39,6 +41,35 @@ async function getDeliveryBannerData() {
   return { overdueCount, uniqueContracts, channelConfigured };
 }
 
+async function getTriageData() {
+  const rows = await db.query.contracts.findMany({
+    where: eq(contracts.status, "active"),
+    columns: {
+      id: true, name: true, partyA: true, partyB: true, status: true,
+      annualValue: true, expiryDate: true, renewalDate: true,
+      noticePeriodDays: true, snoozedUntil: true, renewalDecision: true,
+    },
+  });
+  const mapped: TriageContract[] = rows.map((r) => ({
+    id: r.id, name: r.name, party_a: r.partyA, party_b: r.partyB,
+    status: r.status, annual_value: r.annualValue,
+    expiry_date: r.expiryDate, renewal_date: r.renewalDate,
+    notice_period_days: r.noticePeriodDays,
+    snoozed_until: r.snoozedUntil, renewal_decision: r.renewalDecision,
+  }));
+  const items = buildTriageQueue(mapped);
+  const next = nextUp(mapped);
+  const ids = items.map((i) => i.contract_id);
+  const findings = ids.length
+    ? await db.query.contractAnalysis.findMany({
+        where: inArray(contractAnalysis.contractId, ids),
+        columns: { contractId: true },
+      })
+    : [];
+  const aiFindingsByContract = Object.fromEntries(findings.map((f) => [f.contractId, true]));
+  return { items, next, aiFindingsByContract, triageContracts: mapped };
+}
+
 export default async function DashboardPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
@@ -51,6 +82,8 @@ export default async function DashboardPage() {
 
   const { overdueCount, uniqueContracts, channelConfigured } = await getDeliveryBannerData();
   const showDeliveryBanner = overdueCount > 0 && !channelConfigured;
+
+  const { items, next, aiFindingsByContract } = await getTriageData();
 
   return (
     <div style={{ fontFamily: "var(--font-inter), system-ui, sans-serif", color: "#F9FAFB" }}>
@@ -95,6 +128,14 @@ export default async function DashboardPage() {
             )}
           </div>
         )}
+
+        {/* ── Triage queue — what needs action now ──────────── */}
+        <TriageQueue
+          items={items}
+          next={next}
+          aiFindingsByContract={aiFindingsByContract}
+          aiEnabled={aiEnabled()}
+        />
 
         {/* ── Upload zone ────────────────────────────────── */}
         <div style={{ marginBottom: "24px" }}>
