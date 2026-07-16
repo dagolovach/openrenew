@@ -23,18 +23,20 @@ That's it — four containers come up (web, python, postgres, cron), migrations 
 
 ## Features
 
+- A triage queue surfaces every contract that needs a renewal decision in the next 30 days — mark it renewing, canceling, or negotiating, or snooze it
 - PDF upload with AI field extraction (forced JSON-schema tool call, not free text)
 - Party-name anonymization before any contract text reaches an AI provider
 - AI risk analysis with concrete findings (up to 8 per contract)
 - Alerts at 60/30/7 days before expiry, plus before the notice-period deadline
 - Alert delivery via Slack webhook and/or SMTP email
+- Subscribe to an iCal feed of every deadline in Google Calendar or Outlook — the URL lives in Settings
 - Contract version comparison on renewal (field and clause diffs)
 - AI-drafted vendor emails (e.g. cancellation notices)
 - Manual entry mode — full functionality with no AI key configured
 - Multi-user shared workspace (single admin-managed team)
 - Dark terminal-style UI
 
-<!-- screenshot: dashboard -->
+<!-- screenshot: home screen -->
 
 ## Privacy
 
@@ -99,6 +101,8 @@ All variables live in `.env.example` — copy it to `.env` and fill it in.
 | `DATA_DIR` | No | `./data/contracts` (`/data/contracts` in Docker) | Where contract PDFs are stored on disk |
 
 The Slack webhook URL is **not** an environment variable — it's configured in-app under Settings, tested on save, and stored in the `app_settings` table.
+
+The calendar-feed URL is also generated in-app under Settings (not an environment variable) — see Features above.
 
 ## Running without AI
 

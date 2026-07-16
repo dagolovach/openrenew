@@ -38,6 +38,7 @@
 | 022 | Renewal savings tracking and dashboard | Superseded | Apr 2026 |
 | 023 | Renewal savings tracking deferred to compare flow | Active | Apr 2026 |
 | 024 | OpenRenew self-hosted conversion | Active | Jul 2026 |
+| 025 | Triage-first home screen and iCal feed | Active | Jul 2026 |
 
 ---
 
@@ -553,6 +554,29 @@ Rebuild the deployment and infrastructure layer for self-hosting while keeping t
 - Single shared workspace, no per-user data isolation — acceptable for a self-hosted single-team tool, but a multi-tenant story (OIDC/SSO, isolated workspaces) is the natural next paid-tier feature if this is ever offered as a hosted product again
 - Decisions 005 (Supabase), 008 (Stripe Customer Portal), and 011 (free tier cap) no longer apply and are marked Superseded above
 - Decisions 001 (Python microservice) and 010 (async extraction / awaited analysis) remain architecturally correct — only the deployment platform changed, not the pattern
+
+---
+
+### 025 — Triage-first home screen and iCal feed
+
+**Status:** Active
+**Date:** July 2026
+
+**Context:**
+As an internal tool, the home screen's job is "what needs action now," not selling value back to the user the way a SaaS dashboard does — metric cards (contracts managed, alerts sent) were SaaS vanity metrics with no action attached to them.
+
+**Decision:**
+Redesign the home screen around a triage queue (30-day window, notice-deadline-first — see `lib/triage.ts`), a 12-month horizon timeline, and a dense contract table. Decisions (Renewing/Canceling/Negotiating) and snoozes are recorded directly on `contracts`. Add an instance-wide, token-authenticated iCal feed so deadlines can be subscribed to from any calendar app.
+
+**Alternatives considered:**
+- Keep the metrics dashboard — rejected; vanity numbers with no action attached
+- Per-user calendar feeds — rejected; this is a shared workspace, per-user tokens add plumbing with no benefit
+- Full cancel/renew workflows launched from the queue — rejected for v1; the queue only marks status, the existing upload/renewal/cron flows still own the actual lifecycle
+
+**Consequences:**
+- The home screen now depends on the triage rules in `lib/triage.ts` — changing the queue window or decision-point priority changes what "NEEDS ACTION" means
+- The feed token is a capability URL — anyone holding it can read all deadlines; Regenerate invalidates the old URL immediately
+- Marking a contract Renewing/Canceling/Negotiating removes it from the queue but does not change contract lifecycle — expiry alerts, cron, and renewal upload behave exactly as before
 
 ---
 

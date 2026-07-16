@@ -61,10 +61,16 @@ Email/password with bcrypt, JWT session cookie (`openrenew_session`, `jose` HS25
 **Alert delivery — instance-level, not per-user**
 Slack webhook URL is stored in the `app_settings` table (configured via Settings UI, validated and test-pinged on save — see `app/api/settings/slack/route.ts`). SMTP is configured via env vars (`SMTP_HOST` etc., `lib/email-smtp.ts`). If neither is configured, alerts stay `pending` and the dashboard shows a banner rather than silently dropping them.
 
+**Home screen — triage-first**
+The home screen is not a metrics dashboard: it's a triage queue, a horizon timeline, and a contract table. Queue logic lives in `lib/triage.ts` (pure, unit-tested) — it surfaces active contracts whose decision point (notice deadline, else renewal date, else expiry date) is ≤30 days away or overdue. Rows act via `PATCH /api/contracts/[id]/decision`, writing `contracts.renewal_decision` (Renewing/Canceling/Negotiating) or `contracts.snoozed_until` (Snooze 7d). Decided or snoozed contracts drop out of the queue. Below the queue: a 12-month horizon timeline, then a dense contract table with a `~$Nk/yr tracked across N contracts` header stat. Upload is a slim strip at the bottom, not the focal point.
+
+**Calendar feed — instance-wide iCal**
+`GET /api/calendar/feed.ics?token=…` (folder route `app/api/calendar/feed.ics/`) streams every contract deadline as an RFC 5545 feed — generation logic in `lib/ical.ts`. The token is stored in `app_settings.ical_token`, checked with a constant-time compare, and returns 404 on mismatch. Settings shows the feed URL with Copy, and an admin-only Regenerate that invalidates the old URL.
+
 **AI — entirely optional**
 Gated on `ANTHROPIC_API_KEY` via `aiEnabled()` in `lib/ai.ts`. Without it: manual entry, alerts, dashboard, and everything else still works — only extraction/analysis/comparison/drafting are unavailable. With it: Haiku detects party names from the contract's opening → user confirms → the full contract text is regex-anonymized (`anonymize_text()` in `python-service/main.py`, replacing both real names with "Party A"/"Party B") before it is ever sent to Claude for extraction, analysis, or comparison.
 
-**Key tables:** `users`, `contracts`, `contract_extractions`, `contract_analysis`, `contract_comparisons`, `alerts` (no user column — instance-wide), `activity_log`, `app_settings`.
+**Key tables:** `users`, `contracts` (includes `snoozed_until` / `renewal_decision` for the triage queue), `contract_extractions`, `contract_analysis`, `contract_comparisons`, `alerts` (no user column — instance-wide), `activity_log`, `app_settings` (includes `ical_token`).
 
 **Contract lifecycle:**
 1. Upload PDF → saved to the shared volume, row created in `contracts`
@@ -73,6 +79,7 @@ Gated on `ANTHROPIC_API_KEY` via `aiEnabled()` in `lib/ai.ts`. Without it: manua
 3. `POST /api/confirm` → alerts generated (60/30/7 days before expiry + notice-period deadline), analysis triggered if AI is enabled
 4. Contract goes active
 5. Daily cron sidecar (`docker/cron`) curls `GET /api/cron/send-alerts` and weekly `GET /api/cron/send-weekly-digest` with `Authorization: Bearer $CRON_SECRET` → delivered via Slack webhook and/or SMTP
+6. Active contracts within 30 days of their decision point appear in the home screen triage queue until marked Renewing/Canceling/Negotiating or snoozed (`PATCH /api/contracts/[id]/decision`) — this only records a decision, it does not change the lifecycle above
 
 ## Critical Constraints
 
