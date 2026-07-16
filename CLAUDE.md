@@ -9,9 +9,14 @@ Keep commit messages short and to the point — one line, no body unless truly n
 ## Commands
 
 ```bash
-npm run dev        # Start Next.js dev server (localhost:3000)
-npm run build      # Production build
-npm run lint       # Run ESLint
+docker compose up -d      # Start all 4 containers (web, python, postgres, cron)
+docker compose down       # Stop them
+
+npm run dev                # Start Next.js dev server (localhost:3000) — needs postgres reachable
+npm run build               # Production build
+npm run lint                 # Run ESLint
+npm run db:generate       # Generate a new Drizzle migration from schema changes
+npm run db:migrate         # Apply migrations (also runs automatically on web container start)
 
 npx jest                          # Run all tests
 npx jest __tests__/lib/alerts     # Run a single test file
@@ -19,46 +24,59 @@ npx jest --testNamePattern "foo"  # Run tests matching a name pattern
 
 # Python service (from python-service/)
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8001
+uvicorn main:app --reload --port 8000
 pytest tests/
 ```
 
+For local `npm run dev` / `npm run db:migrate` outside Docker, uncomment the `ports` mapping on the `postgres` service in `docker-compose.yml` first.
+
 ## Architecture
 
-Renewl is a two-service SaaS app for contract renewal tracking.
+OpenRenew is a self-hosted, four-container contract renewal tracker (AGPL-3.0). No external SaaS dependencies are required — everything optional degrades gracefully.
 
-**Frontend/Orchestration — Next.js 16 + React 19 (Vercel)**
-Next.js API routes are thin orchestrators: they validate input, generate signed Supabase URLs, call the Python service, and write results to Supabase. They do not call the Anthropic API directly.
+**web — Next.js 16 + React 19**
+Handles auth, UI, and API orchestration. Next.js API routes validate input, call the Python service over the internal Docker network, and write results to Postgres via Drizzle. They do not call the Anthropic API directly.
 
-**AI/PDF Processing — Python FastAPI (Railway)**
-All PDF extraction and Claude API calls live here. The service is stateless (no Supabase credentials). Auth between services uses `Authorization: Bearer <EXTRACTION_SERVICE_SECRET>` shared secret. Endpoints:
+**python — FastAPI**
+All PDF extraction and Claude API calls live here. The service is stateless — it only reads PDFs from the shared volume (mounted read-only) and talks to Anthropic. Auth between services uses `Authorization: Bearer <EXTRACTION_SERVICE_SECRET>` shared secret. Endpoints:
 - `POST /extract` — pdfplumber text extraction + Claude Sonnet structured field parsing
+- `POST /extract-file` — same, given a file path already on the shared volume
+- `POST /detect-parties` — Claude Haiku party-name detection from the contract's opening lines
 - `POST /analyse` — Claude Haiku risk analysis on extracted fields
 - `POST /compare` — compare renewal contract against parent contract
+- `POST /draft-action-email` — Claude drafts a vendor email (e.g. cancellation notice)
 - `GET /health`
 
 Adding any new AI feature means editing `python-service/main.py`, not `app/api/`.
 
-**Database, Auth, Storage — Supabase**
-- PostgreSQL with RLS on all tables; session client enforces user isolation, admin client (bypasses RLS) is used only in cron jobs with explicit `.eq('user_id', ...)` as defence-in-depth
-- Auth: Google OAuth + Magic Link (no passwords)
-- Storage: private `contracts/` bucket, signed URLs (600s validity)
+**postgres — Postgres 16 + Drizzle ORM**
+Migrations live in `drizzle/`, generated with `npm run db:generate` and auto-applied on web container start (`scripts/migrate.mjs`, invoked from `docker/entrypoint.sh`).
 
-**Key tables:** `profiles`, `contracts`, `contract_extractions`, `contract_analysis`, `contract_comparisons`, `alerts`, `activity_log`
+**Storage — shared Docker volume**
+PDFs are written to `/data/contracts` (`DATA_DIR`) by `web`; the `python` container mounts the same volume read-only. Path traversal is guarded on both sides — see `lib/storage.ts` (`pdfAbsolutePath`).
+
+**Auth — local, no external provider**
+Email/password with bcrypt, JWT session cookie (`openrenew_session`, `jose` HS256, signed with `SESSION_SECRET`). First run redirects to `/setup` to create the admin. Admins add teammates via Settings (`POST /api/auth/users`). Single shared workspace — no per-user data isolation. `AUTH_DISABLED=true` skips login entirely for localhost-only proof-of-concept use; never set it in production. See `lib/auth/session.ts`.
+
+**Alert delivery — instance-level, not per-user**
+Slack webhook URL is stored in the `app_settings` table (configured via Settings UI, validated and test-pinged on save — see `app/api/settings/slack/route.ts`). SMTP is configured via env vars (`SMTP_HOST` etc., `lib/email-smtp.ts`). If neither is configured, alerts stay `pending` and the dashboard shows a banner rather than silently dropping them.
+
+**AI — entirely optional**
+Gated on `ANTHROPIC_API_KEY` via `aiEnabled()` in `lib/ai.ts`. Without it: manual entry, alerts, dashboard, and everything else still works — only extraction/analysis/comparison/drafting are unavailable. With it: Haiku detects party names from the contract's opening → user confirms → the full contract text is regex-anonymized (`anonymize_text()` in `python-service/main.py`, replacing both real names with "Party A"/"Party B") before it is ever sent to Claude for extraction, analysis, or comparison.
+
+**Key tables:** `users`, `contracts`, `contract_extractions`, `contract_analysis`, `contract_comparisons`, `alerts` (no user column — instance-wide), `activity_log`, `app_settings`.
 
 **Contract lifecycle:**
-1. Upload PDF → signed URL stored in Supabase
-2. `POST /api/extract` → async Python `/extract` → polls every 3s for status
-3. User reviews extraction at `/review/new`, confirms party names
-4. `POST /api/confirm` → awaits `triggerAnalysis()` within 60s `maxDuration`
-5. Contract goes active; alerts are generated (60/30/7 days before expiry + notice deadline)
-6. Daily Vercel cron hits `GET /api/cron/send-alerts` → queries `alerts` table, sends via Resend
+1. Upload PDF → saved to the shared volume, row created in `contracts`
+2. **With AI:** `POST /api/extract` → Python `/detect-parties` → user confirms party names at `/review/new` → `POST /api/extract` (full run) → user reviews extracted fields
+   **Without AI:** straight to manual entry at `/review/new`
+3. `POST /api/confirm` → alerts generated (60/30/7 days before expiry + notice-period deadline), analysis triggered if AI is enabled
+4. Contract goes active
+5. Daily cron sidecar (`docker/cron`) curls `GET /api/cron/send-alerts` and weekly `GET /api/cron/send-weekly-digest` with `Authorization: Bearer $CRON_SECRET` → delivered via Slack webhook and/or SMTP
 
 ## Critical Constraints
 
 **Inline styles only** — No Tailwind utility classes on dashboard/review/contract-detail pages. All styles are inline style objects. Tailwind is in devDependencies but produces no output. Never add Tailwind classes without migrating all inline styles first. (Decision 004)
-
-**`maxDuration = 60` on `/api/confirm` is load-bearing** — Do not remove it. Analysis is awaited synchronously there. (Decision 010)
 
 **`setInterval` is banned** — Use `setTimeout` chains everywhere to yield to user input. (Decision 020)
 
@@ -70,30 +88,29 @@ Adding any new AI feature means editing `python-service/main.py`, not `app/api/`
 
 **Date order warnings are advisory** — `validateDateOrder()` shows warnings but never blocks confirmation. (Decision 018)
 
-**Free tier cap** — 20-contract limit enforced in `/api/upload`. (Decision 011)
+**snake_case at service boundaries** — JSON payloads between `web` and `python`, and between API routes and the frontend, stay snake_case (matching the extraction schema and Python conventions). The Drizzle layer (`lib/db/schema.ts`) is camelCase — mapping happens at the API route boundary, not in the DB layer.
 
 ## AI Models
 
 | Task | Model | Configurable |
 |------|-------|-------------|
 | Extraction | `claude-sonnet-4-6` | `AI_MODEL` env var in Python service |
-| Analysis | `claude-haiku-4-5-20251001` | `ANALYSIS_MODEL` constant in `python-service/main.py` |
+| Party detection / Analysis | `claude-haiku-4-5-20251001` | `ANALYSIS_MODEL` constant in `python-service/main.py` |
 
 Do not swap models without testing on 10+ real contracts first. (Decision 002)
 
 ## Environment Variables
 
-See `.env.example` for the full list. Key variables:
+See `.env.example` for the full list; the README's Configuration table documents each one. Key ones to know when working on the code:
 
 | Variable | Notes |
 |----------|-------|
-| `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client-side Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-only — never expose to client |
-| `PYTHON_SERVICE_URL` | Railway deployment URL |
-| `EXTRACTION_SERVICE_SECRET` | Shared secret — same value in both services |
-| `CRON_SECRET` | Vercel cron auth — generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-| `APP_URL` | Base URL used in email templates (`https://getrenewl.com` in prod) |
-| `ANTHROPIC_API_KEY` | Python service only (not used in Next.js) |
+| `SESSION_SECRET` | JWT signing key for the session cookie — must be ≥32 chars |
+| `EXTRACTION_SERVICE_SECRET` | Shared secret — same value in both `web` and `python` |
+| `CRON_SECRET` | Auth token the cron sidecar sends to `/api/cron/*` |
+| `ANTHROPIC_API_KEY` | Optional — read independently by both `web` (`lib/ai.ts`, to decide whether to render AI UI) and `python` (to actually call Claude) |
+| `AUTH_DISABLED` | `true` bypasses login — dev/localhost only |
+| `DATA_DIR` | Contract PDF storage root — `/data/contracts` inside containers |
 
 ## Design System
 

@@ -1,6 +1,7 @@
-# Renewl — Architecture & Product Decisions
+# OpenRenew — Architecture & Product Decisions
 
-> This file records significant decisions made during the design and build of Renewl.
+> This file records significant decisions made during the design and build of OpenRenew
+> (originally built as Renewl, a SaaS, then open-sourced for self-hosting — see 024).
 > It answers "why does it work this way?" — the git log answers "what changed?"
 >
 > **When to add an entry:** any time you make a choice that a future engineer might
@@ -17,13 +18,13 @@
 | 002 | Sonnet for extraction, Haiku for analysis | Active | Mar 2026 |
 | 003 | Anthropic SDK direct | Active | Mar 2026 |
 | 004 | No Tailwind — inline styles throughout | Active | Mar 2026 |
-| 005 | Supabase over Neon | Active | Mar 2026 |
+| 005 | Supabase over Neon | Superseded by 024 | Mar 2026 |
 | 006 | party_a / party_b replacing counterparty_name | Active | Mar 2026 |
 | 007 | Dark theme only in v1 | Active | Mar 2026 |
-| 008 | Stripe Customer Portal over custom billing UI | Active | Mar 2026 |
+| 008 | Stripe Customer Portal over custom billing UI | Superseded by 024 | Mar 2026 |
 | 009 | Static landing page | Active | Mar 2026 |
 | 010 | Async extraction, awaited analysis | Active | Mar 2026 |
-| 011 | Free tier capped at 20 contracts | Active | Mar 2026 |
+| 011 | Free tier capped at 20 contracts | Superseded by 024 | Mar 2026 |
 | 012 | Single confidence float per extraction | Active | Mar 2026 |
 | 013 | Dashboard FCP fix deferred | Deferred | Mar 2026 |
 | 014 | Slack webhook UI deferred | Deferred | Mar 2026 |
@@ -36,6 +37,7 @@
 | 021 | Three-tier pricing with annual billing | Active | Apr 2026 |
 | 022 | Renewal savings tracking and dashboard | Superseded | Apr 2026 |
 | 023 | Renewal savings tracking deferred to compare flow | Active | Apr 2026 |
+| 024 | OpenRenew self-hosted conversion | Active | Jul 2026 |
 
 ---
 
@@ -45,7 +47,7 @@
 
 ### 001 — Python microservice for PDF processing
 
-**Status:** Active
+**Status:** Active (platform changed Railway → Docker container, see 024)
 **Date:** March 2026
 
 **Context:**
@@ -130,7 +132,7 @@ All styles are written as inline style objects in Next.js components. No Tailwin
 
 ### 005 — Supabase over Neon for database, auth, and storage
 
-**Status:** Active
+**Status:** Superseded by 024
 **Date:** March 2026
 
 **Context:**
@@ -197,7 +199,7 @@ Dark only in v1. No light mode toggle. Background: `#0A0F1E`. If users request l
 
 ### 008 — Stripe Customer Portal over custom billing UI
 
-**Status:** Active
+**Status:** Superseded by 024
 **Date:** March 2026
 
 **Context:**
@@ -239,7 +241,7 @@ Move the Supabase auth check out of the landing page component and into the midd
 
 ### 010 — Async extraction with polling; awaited analysis from confirm
 
-**Status:** Active
+**Status:** Active (`maxDuration` no longer applies outside Vercel — see 024)
 **Date:** March 2026
 
 **Context:**
@@ -266,7 +268,7 @@ The confirm route has `maxDuration = 60`, making it safe to await analysis there
 
 ### 011 — Free tier capped at 20 contracts
 
-**Status:** Active
+**Status:** Superseded by 024
 **Date:** March 2026
 
 **Context:**
@@ -521,6 +523,36 @@ Remove all savings tracking UI, API endpoint, and schema columns (renewal_action
 - Dashboard shows Contracts Managed and Alerts Sent only (no savings metrics until compare-flow savings ships)
 - Pricing page no longer lists "renewal savings dashboard" as a feature
 - Compare flow spec must include schema additions for renewal_action, renewal_savings, original_renewal_price
+
+---
+
+### 024 — OpenRenew self-hosted conversion
+
+**Status:** Active
+**Date:** July 2026
+
+**Context:**
+Renewl (the SaaS) had gone months without acquiring users despite being fully built and working. Rather than let a working product sit unused, it was open-sourced as OpenRenew: a self-hosted contract renewal tracker anyone can run on their own infrastructure with `docker compose up`, with AI extraction as an optional add-on instead of the product's core value proposition.
+
+**Decision:**
+Rebuild the deployment and infrastructure layer for self-hosting while keeping the product logic intact:
+- `docker-compose.yml` with four containers — `web` (Next.js), `python` (FastAPI), `postgres`, and a `cron` sidecar — replacing Vercel + Railway + Supabase
+- Drizzle ORM over Postgres 16, migrations auto-applied on `web` container start, replacing Supabase's managed Postgres + RLS
+- Local email/password auth (bcrypt + JWT session cookie), first-run `/setup` creates the admin, replacing Google OAuth + Magic Link
+- Contract PDFs stored on a shared Docker volume (`/data/contracts`), `python` mounts it read-only, replacing Supabase Storage signed URLs
+- Alert delivery moved to instance-level: Slack webhook configured in-app (Settings, stored in `app_settings`) and/or SMTP via env vars, replacing Resend
+- AI (extraction, analysis, comparison, drafting) gated entirely behind an optional `ANTHROPIC_API_KEY` — the app is fully functional as a manual tracker without it
+- Licensed AGPL-3.0 instead of closed-source SaaS
+
+**Alternatives considered:**
+- Keep running it as a hosted SaaS — rejected; no users, and continued Vercel/Railway/Supabase/Stripe billing for an unused product made no sense
+- MIT license — rejected; MIT would let a third party take this code and run it as a competing hosted service without contributing changes back. AGPL closes that loophole while keeping self-hosting completely free
+
+**Consequences:**
+- Supabase, Stripe, Vercel, and Railway are gone entirely — no external SaaS dependencies except the optional Anthropic API and the operator's own SMTP server
+- Single shared workspace, no per-user data isolation — acceptable for a self-hosted single-team tool, but a multi-tenant story (OIDC/SSO, isolated workspaces) is the natural next paid-tier feature if this is ever offered as a hosted product again
+- Decisions 005 (Supabase), 008 (Stripe Customer Portal), and 011 (free tier cap) no longer apply and are marked Superseded above
+- Decisions 001 (Python microservice) and 010 (async extraction / awaited analysis) remain architecturally correct — only the deployment platform changed, not the pattern
 
 ---
 
