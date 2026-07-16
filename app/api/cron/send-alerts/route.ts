@@ -1,64 +1,85 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient as createAdminClient } from '@supabase/supabase-js';
-import { Resend } from 'resend';
-import { buildAlertEmail, AlertWithContext, AlertType, EMAIL_FROM, EMAIL_REPLY_TO } from '@/lib/email';
-import { timingSafeEqual } from 'crypto';
+import { NextRequest, NextResponse } from "next/server";
+import { and, asc, eq, lt, lte } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { alerts as alertsTable, contracts, activityLog } from "@/lib/db/schema";
+import { buildAlertEmail, AlertWithContext, AlertType } from "@/lib/email";
+import { getSetting } from "@/lib/db/settings";
+import { sendSlackMessage } from "@/lib/slack";
+import { isSmtpConfigured, alertRecipients, sendEmail } from "@/lib/email-smtp";
+import { timingSafeEqual } from "crypto";
+
+const ALERT_LABEL: Record<AlertType, string> = {
+  day_60: "renewal in 60 days",
+  day_30: "renewal in 30 days",
+  day_7: "renewal in 7 days",
+  notice_deadline: "notice deadline",
+};
 
 export async function GET(request: NextRequest) {
   // ── Startup assertions ─────────────────────────────────
   if (!process.env.CRON_SECRET) {
-    console.error('CRON_SECRET is not set — cron route is unprotected');
-    return new Response('Server misconfiguration', { status: 500 });
+    console.error("CRON_SECRET is not set — cron route is unprotected");
+    return new Response("Server misconfiguration", { status: 500 });
   }
   if (!process.env.APP_URL) {
-    console.error('APP_URL is not set — email CTA links will be broken');
-    return new Response('Server misconfiguration', { status: 500 });
+    console.error("APP_URL is not set — email CTA links will be broken");
+    return new Response("Server misconfiguration", { status: 500 });
   }
 
   // ── Auth guard ─────────────────────────────────────────
-  const authHeader = request.headers.get('authorization');
+  const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
   const expected = Buffer.from(`Bearer ${cronSecret}`);
-  const actual = Buffer.from(authHeader ?? '');
+  const actual = Buffer.from(authHeader ?? "");
 
   if (
     expected.length !== actual.length ||
     !timingSafeEqual(expected, actual)
   ) {
-    return new Response('Unauthorized', { status: 401 });
+    return new Response("Unauthorized", { status: 401 });
   }
 
-  // ── Admin client (service role — bypasses RLS for cross-user query) ────
-  const adminClient = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-
-  // ── Query due alerts ───────────────────────────────────
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
   // ── Mark expired contracts ──────────────────────────────
   // Run BEFORE alert processing so same-day expiries are correctly
   // labelled before any alert logic reads contract status.
-  const { data: justExpired, error: expireError } = await adminClient
-    .from('contracts')
-    .update({ status: 'expired' })
-    .eq('status', 'active')
-    .lt('expiry_date', today)
-    .select('id');
+  try {
+    const justExpired = await db
+      .update(contracts)
+      .set({ status: "expired" })
+      .where(and(eq(contracts.status, "active"), lt(contracts.expiryDate, today)))
+      .returning({ id: contracts.id });
 
-  if (expireError) {
-    console.error('[cron] Failed to mark contracts as expired:', expireError);
-  } else {
-    const expiredCount = justExpired?.length ?? 0;
+    const expiredCount = justExpired.length;
     console.log(`[cron] Marked ${expiredCount} contract(s) as expired`);
     if (expiredCount > 0) {
-      await adminClient.from('activity_log').insert({
-        user_id: null,
-        event_type: 'contracts_expired',
+      await db.insert(activityLog).values({
+        userId: null,
+        eventType: "contracts_expired",
         metadata: { count: expiredCount, date: today },
       });
     }
+  } catch (expireError) {
+    console.error("[cron] Failed to mark contracts as expired:", expireError);
+  }
+
+  // ── Delivery channels (read once per run) ────────────────
+  const slackWebhook = await getSetting<string>("slack_webhook_url");
+  const recipients = isSmtpConfigured() ? alertRecipients() : [];
+
+  if (!slackWebhook && recipients.length === 0) {
+    const pending = await db.query.alerts.findMany({
+      where: and(lte(alertsTable.scheduledFor, today), eq(alertsTable.status, "pending")),
+      columns: { id: true },
+    });
+    console.log(`[cron] no delivery channel configured; ${pending.length} alerts left pending`);
+    await db.insert(activityLog).values({
+      userId: null,
+      eventType: "cron_alerts_sent",
+      metadata: { sent: 0, failed: 0, total: 0, pending: pending.length, date: today },
+    });
+    return NextResponse.json({ sent: 0, failed: 0, total: 0, pending: pending.length });
   }
 
   const PAGE_SIZE = 100;
@@ -66,72 +87,88 @@ export async function GET(request: NextRequest) {
   let totalSent = 0;
   let totalFailed = 0;
   let totalProcessed = 0;
-  const resend = new Resend(process.env.RESEND_API_KEY);
 
   while (totalProcessed < MAX_ALERTS_PER_RUN) {
     // Always query status='pending' from the top — rows processed in the previous
     // iteration are now 'sent' or 'failed' and won't appear in this fetch.
-    const { data: alerts, error: queryError } = await adminClient
-      .from('alerts')
-      .select(`
-        id, alert_type, scheduled_for, target_date,
-        contract_id, user_id,
-        contracts!inner ( name, expiry_date, renewal_date, auto_renew, party_a, party_b, contract_value, notice_period_days, annual_value ),
-        profiles!inner ( email, plan )
-      `)
-      .lte('scheduled_for', today)
-      .eq('status', 'pending')
-      .order('scheduled_for', { ascending: true })
-      .limit(PAGE_SIZE);
-
-    if (queryError || !alerts) {
-      console.error('Cron: failed to query alerts', queryError);
-      return new Response('Internal Server Error', { status: 500 });
+    let dueAlerts;
+    try {
+      dueAlerts = await db
+        .select({
+          id: alertsTable.id,
+          alertType: alertsTable.alertType,
+          scheduledFor: alertsTable.scheduledFor,
+          targetDate: alertsTable.targetDate,
+          contractId: alertsTable.contractId,
+          name: contracts.name,
+          expiryDate: contracts.expiryDate,
+          renewalDate: contracts.renewalDate,
+          autoRenew: contracts.autoRenew,
+          partyA: contracts.partyA,
+          partyB: contracts.partyB,
+          contractValue: contracts.contractValue,
+          noticePeriodDays: contracts.noticePeriodDays,
+          annualValue: contracts.annualValue,
+        })
+        .from(alertsTable)
+        .innerJoin(contracts, eq(alertsTable.contractId, contracts.id))
+        .where(and(lte(alertsTable.scheduledFor, today), eq(alertsTable.status, "pending")))
+        .orderBy(asc(alertsTable.scheduledFor))
+        .limit(PAGE_SIZE);
+    } catch (queryError) {
+      console.error("Cron: failed to query alerts", queryError);
+      return new Response("Internal Server Error", { status: 500 });
     }
 
-    if (alerts.length === 0) break;
+    if (dueAlerts.length === 0) break;
 
-    type AlertRow = {
-      id: string; alert_type: AlertType; scheduled_for: string; target_date: string;
-      contract_id: string; user_id: string;
-      contracts: {
-        name: string; expiry_date: string | null; renewal_date: string | null;
-        auto_renew: boolean | null; party_a: string | null; party_b: string | null;
-        contract_value: string | null; notice_period_days: number | null;
-        annual_value: number | null;
-      };
-      profiles: { email: string; plan: string | null };
-    };
-    const alertsWithContext: AlertWithContext[] = (alerts as unknown as AlertRow[]).map((a) => ({
+    const alertsWithContext: Array<AlertWithContext & { id: string }> = dueAlerts.map((a) => ({
       id: a.id,
-      alert_type: a.alert_type,
-      scheduled_for: a.scheduled_for,
-      target_date: a.target_date,
-      contract_id: a.contract_id,
-      user_id: a.user_id,
-      name: a.contracts.name,
-      expiry_date: a.contracts.expiry_date,
-      renewal_date: a.contracts.renewal_date,
-      auto_renew: a.contracts.auto_renew,
-      party_a: a.contracts.party_a,
-      party_b: a.contracts.party_b,
-      contract_value: a.contracts.contract_value,
-      notice_period_days: a.contracts.notice_period_days,
-      email: a.profiles.email,
-      annual_value: a.contracts.annual_value,
-      user_plan: a.profiles.plan,
+      contract_id: a.contractId,
+      alert_type: a.alertType as AlertType,
+      scheduled_for: a.scheduledFor,
+      target_date: a.targetDate,
+      name: a.name,
+      expiry_date: a.expiryDate,
+      renewal_date: a.renewalDate,
+      auto_renew: a.autoRenew,
+      party_a: a.partyA,
+      party_b: a.partyB,
+      contract_value: a.contractValue,
+      notice_period_days: a.noticePeriodDays,
+      annual_value: a.annualValue,
     }));
 
     const results = await Promise.allSettled(
       alertsWithContext.map(async (alert) => {
-        const email = buildAlertEmail(alert);
-        await resend.emails.send({
-          from: EMAIL_FROM,
-          replyTo: EMAIL_REPLY_TO,
-          to: alert.email,
-          subject: email.subject,
-          html: email.html,
-        });
+        const errors: string[] = [];
+        let delivered = false;
+
+        if (slackWebhook) {
+          const label = ALERT_LABEL[alert.alert_type];
+          const line =
+            `⏰ *${alert.name}* — ${label} on ${alert.target_date}` +
+            `${alert.auto_renew ? " (auto-renews)" : ""} · ${process.env.APP_URL}/dashboard/contracts/${alert.contract_id}`;
+          const ok = await sendSlackMessage(slackWebhook, line);
+          if (ok) delivered = true;
+          else errors.push("slack: delivery failed");
+        }
+
+        if (recipients.length > 0) {
+          const email = buildAlertEmail(alert);
+          const sendResults = await Promise.allSettled(
+            recipients.map((to) => sendEmail({ to, subject: email.subject, html: email.html }))
+          );
+          const failures = sendResults.filter((r) => r.status === "rejected");
+          if (failures.length < sendResults.length) delivered = true;
+          if (failures.length > 0) {
+            errors.push(`smtp: ${failures.length}/${sendResults.length} recipient(s) failed`);
+          }
+        }
+
+        if (!delivered) {
+          throw new Error(errors.join("; ") || "no delivery channel succeeded");
+        }
         return alert.id;
       })
     );
@@ -139,28 +176,32 @@ export async function GET(request: NextRequest) {
     await Promise.all(
       results.map(async (result, i) => {
         const alertId = alertsWithContext[i].id;
-        if (result.status === 'fulfilled') {
+        if (result.status === "fulfilled") {
           totalSent++;
-          const { error } = await adminClient
-            .from('alerts')
-            .update({ status: 'sent', sent_at: new Date().toISOString() })
-            .eq('id', alertId);
-          if (error) console.error(`Cron: failed to mark alert ${alertId} sent`, error);
+          try {
+            await db.update(alertsTable)
+              .set({ status: "sent", sentAt: new Date() })
+              .where(eq(alertsTable.id, alertId));
+          } catch (err) {
+            console.error(`Cron: failed to mark alert ${alertId} sent`, err);
+          }
         } else {
           totalFailed++;
           const reason = String((result as PromiseRejectedResult).reason).slice(0, 500);
           console.error(`Cron: failed to send alert ${alertId}:`, reason);
-          const { error } = await adminClient
-            .from('alerts')
-            .update({ status: 'failed', failure_reason: reason })
-            .eq('id', alertId);
-          if (error) console.error(`Cron: failed to mark alert ${alertId} failed`, error);
+          try {
+            await db.update(alertsTable)
+              .set({ status: "failed", failureReason: reason })
+              .where(eq(alertsTable.id, alertId));
+          } catch (err) {
+            console.error(`Cron: failed to mark alert ${alertId} failed`, err);
+          }
         }
       })
     );
 
-    totalProcessed += alerts.length;
-    if (alerts.length < PAGE_SIZE) break; // last page
+    totalProcessed += dueAlerts.length;
+    if (dueAlerts.length < PAGE_SIZE) break; // last page
   }
 
   if (totalProcessed >= MAX_ALERTS_PER_RUN) {
@@ -171,9 +212,9 @@ export async function GET(request: NextRequest) {
   }
 
   // Activity log — always written, even on zero-alert runs (complete audit trail)
-  await adminClient.from('activity_log').insert({
-    user_id: null,
-    event_type: 'cron_alerts_sent',
+  await db.insert(activityLog).values({
+    userId: null,
+    eventType: "cron_alerts_sent",
     metadata: {
       sent: totalSent,
       failed: totalFailed,

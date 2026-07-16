@@ -1,7 +1,6 @@
 // lib/email.ts
 
-export const EMAIL_FROM = 'OpenRenew <alerts@localhost>';
-export const EMAIL_REPLY_TO = 'alerts@localhost';
+export const EMAIL_FROM = process.env.SMTP_FROM ?? 'OpenRenew <alerts@localhost>';
 
 function escapeHtml(str: string | null | undefined): string {
   if (!str) return ''
@@ -18,7 +17,6 @@ export type AlertType = 'day_60' | 'day_30' | 'day_7' | 'notice_deadline';
 export type AlertWithContext = {
   id: string;
   contract_id: string;
-  user_id: string;
   alert_type: AlertType;
   scheduled_for: string;
   target_date: string;
@@ -30,9 +28,7 @@ export type AlertWithContext = {
   party_b: string | null;
   contract_value: string | null;
   notice_period_days: number | null;
-  email: string;
   annual_value: number | null;
-  user_plan: string | null;
 };
 
 const URGENCY_COLOR: Record<AlertType, string> = {
@@ -120,8 +116,8 @@ export function buildAlertEmail(alert: AlertWithContext): { subject: string; htm
         <tr>
           <td style="padding:20px 24px;border-bottom:1px solid #e5e7eb;">
             <div style="display:inline-flex;align-items:center;gap:2px;margin-bottom:0;">
-              <div style="width:24px;height:24px;border-radius:4px;background:#10B981;display:inline-flex;align-items:center;justify-content:center;font-family:'Courier New',monospace;font-size:14px;font-weight:700;color:#0A0F1E;vertical-align:middle;">R</div>
-              <span style="font-family:'Courier New',monospace;font-size:20px;font-weight:700;color:#111827;letter-spacing:-0.02em;vertical-align:middle;">enewl</span>
+              <div style="width:24px;height:24px;border-radius:4px;background:#10B981;display:inline-flex;align-items:center;justify-content:center;font-family:'Courier New',monospace;font-size:14px;font-weight:700;color:#0A0F1E;vertical-align:middle;">O</div>
+              <span style="font-family:'Courier New',monospace;font-size:20px;font-weight:700;color:#111827;letter-spacing:-0.02em;vertical-align:middle;">penRenew</span>
             </div>
           </td>
         </tr>
@@ -185,7 +181,6 @@ export interface DigestContract {
 }
 
 export interface DigestEmailInput {
-  email: string;
   contracts: DigestContract[]; // already sorted ascending by days_until_expiry
 }
 
@@ -268,8 +263,8 @@ export function buildDigestEmail(input: DigestEmailInput): { subject: string; ht
         <tr>
           <td style="padding:20px 24px;border-bottom:1px solid #e5e7eb;">
             <div style="display:inline-flex;align-items:center;gap:2px;margin-bottom:0;">
-              <div style="width:24px;height:24px;border-radius:4px;background:#10B981;display:inline-flex;align-items:center;justify-content:center;font-family:'Courier New',monospace;font-size:14px;font-weight:700;color:#0A0F1E;vertical-align:middle;">R</div>
-              <span style="font-family:'Courier New',monospace;font-size:20px;font-weight:700;color:#111827;letter-spacing:-0.02em;vertical-align:middle;">enewl</span>
+              <div style="width:24px;height:24px;border-radius:4px;background:#10B981;display:inline-flex;align-items:center;justify-content:center;font-family:'Courier New',monospace;font-size:14px;font-weight:700;color:#0A0F1E;vertical-align:middle;">O</div>
+              <span style="font-family:'Courier New',monospace;font-size:20px;font-weight:700;color:#111827;letter-spacing:-0.02em;vertical-align:middle;">penRenew</span>
             </div>
           </td>
         </tr>

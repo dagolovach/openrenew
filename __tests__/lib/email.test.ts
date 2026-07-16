@@ -4,7 +4,6 @@ import { buildAlertEmail } from '@/lib/email';
 const base = {
   id: 'alert-1',
   contract_id: 'contract-1',
-  user_id: 'user-1',
   alert_type: 'day_60' as const,
   scheduled_for: '2026-06-01',
   target_date: '2026-07-31',
@@ -16,9 +15,7 @@ const base = {
   party_b: null,
   contract_value: '£12,000/yr',
   notice_period_days: 30,
-  email: 'user@example.com',
   annual_value: null,
-  user_plan: null,
 };
 
 describe('buildAlertEmail', () => {
@@ -85,6 +82,6 @@ describe('buildAlertEmail', () => {
   it('returns valid html string', () => {
     const { html } = buildAlertEmail({ ...base });
     expect(html).toContain('<!DOCTYPE html>');
-    expect(html).toContain('Renewl');
+    expect(html).toContain('OpenRenew');
   });
 });

@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   experimental: {
-    optimizePackageImports: ["@supabase/supabase-js", "zod"],
+    optimizePackageImports: ["zod"],
   },
   async headers() {
     return [
