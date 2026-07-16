@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { contracts, contractComparisons } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
 import { triggerComparison } from "@/lib/comparison";
+import { aiEnabled } from "@/lib/ai";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +51,13 @@ const compareSchema = z.object({
 export async function POST(request: Request) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  if (!aiEnabled()) {
+    return NextResponse.json(
+      { error: "ai_disabled", message: "Set ANTHROPIC_API_KEY to enable AI features." },
+      { status: 503 }
+    );
+  }
 
   const body = await request.json();
   const parsed = compareSchema.safeParse(body);

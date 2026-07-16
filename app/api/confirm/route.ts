@@ -6,6 +6,7 @@ import { contracts, contractExtractions, alerts as alertsTable, activityLog } fr
 import { requireUser } from "@/lib/auth/session";
 import { buildAlerts } from "@/lib/alerts";
 import { triggerAnalysis } from "@/lib/analysis";
+import { aiEnabled } from "@/lib/ai";
 import { z } from "zod";
 import { validateDateOrder } from "@/lib/utils";
 
@@ -111,11 +112,15 @@ export async function POST(request: Request) {
   const noticePeriodDays = noticePeriodDaysParsed != null && !isNaN(noticePeriodDaysParsed) ? noticePeriodDaysParsed : null;
 
   // Update contracts row BEFORE generating alerts (makes 409 guard effective on retries)
+  // Without AI, there is no analysis to run — even contracts with an attached file
+  // go straight to "active" rather than a background "analyzing" state that would
+  // otherwise never resolve.
   const hasFile = !!contract.filePath;
+  const shouldAnalyze = hasFile && aiEnabled();
 
   try {
     await db.update(contracts).set({
-      name, category: (f.category ?? category) as string, status: hasFile ? "analyzing" : "active", updatedAt: new Date(),
+      name, category: (f.category ?? category) as string, status: shouldAnalyze ? "analyzing" : "active", updatedAt: new Date(),
       expiryDate: f.expiry_date ? String(f.expiry_date) : null,
       renewalDate: f.renewal_date ? String(f.renewal_date) : null,
       effectiveDate: f.effective_date ? String(f.effective_date) : null,
@@ -199,8 +204,9 @@ export async function POST(request: Request) {
   }
 
   // Run analysis after responding — after() keeps the request context alive until it settles
-  // Manual contracts (no file_path) skip analysis and are already marked active above.
-  if (hasFile) {
+  // Manual contracts (no file_path) and AI-disabled instances skip analysis and are
+  // already marked active above.
+  if (shouldAnalyze) {
     after(async () => {
       try {
         await triggerAnalysis(contract_id, userId);

@@ -4,6 +4,7 @@ import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contractExtractions, contracts } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/auth/session";
+import { aiEnabled } from "@/lib/ai";
 import ReviewClient from "@/components/review/review-client";
 
 export const dynamic = "force-dynamic";
@@ -115,6 +116,7 @@ export default async function ReviewPage({ params, searchParams }: Params) {
       pdfUrl={pdfUrl}
       isManual={isManual}
       parentContractId={contract.parentContractId ?? null}
+      aiEnabled={aiEnabled()}
     />
   );
 }

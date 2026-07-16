@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 
 type Props = {
   contractId: string;
+  aiEnabled: boolean;
 };
 
-export default function RenewalUploadButton({ contractId }: Props) {
+export default function RenewalUploadButton({ contractId, aiEnabled }: Props) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -58,12 +59,15 @@ export default function RenewalUploadButton({ contractId }: Props) {
 
       const { contract_id: newContractId } = await res.json() as { contract_id: string };
 
-      // Trigger extraction
-      await fetch("/api/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contract_id: newContractId }),
-      });
+      // Trigger extraction — skipped when AI is disabled; the upload route already
+      // lands the contract in the manual-entry state in that case.
+      if (aiEnabled) {
+        await fetch("/api/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contract_id: newContractId }),
+        });
+      }
 
       // Redirect to review screen
       router.push(`/dashboard/review/${newContractId}`);

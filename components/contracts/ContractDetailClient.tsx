@@ -149,6 +149,7 @@ function dateUrgencyColor(isoDate: string): string {
 export default function ContractDetailClient({
   contract,
   versionChain,
+  aiEnabled,
 }: {
   contract: Contract;
   versionChain: Array<{
@@ -161,6 +162,7 @@ export default function ContractDetailClient({
     created_at: string;
     parent_contract_id: string | null;
   }>;
+  aiEnabled: boolean;
 }) {
   const contractExpired = isExpired(contract);
   const bandColors = heroBandColors(contract, contractExpired);
@@ -763,7 +765,7 @@ export default function ContractDetailClient({
         {/* ── Upload renewal button (confirmed contracts only) ── */}
         {contract.status === "active" && (
           <div style={{ marginBottom: "12px" }}>
-            <RenewalUploadButton contractId={contract.id} />
+            <RenewalUploadButton contractId={contract.id} aiEnabled={aiEnabled} />
           </div>
         )}
 
@@ -973,6 +975,7 @@ export default function ContractDetailClient({
         ══════════════════════════════════════════════════════════ */}
         {contract.file_name !== null && <ContractIntelligencePanel
           contractId={contract.id}
+          aiEnabled={aiEnabled}
           contractContext={{
             name: contract.name,
             partyA: contract.party_a,

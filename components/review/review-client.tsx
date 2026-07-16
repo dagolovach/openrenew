@@ -222,7 +222,7 @@ function ExtractionComparisonPanel({ contractId }: { contractId: string }) {
   );
 }
 
-function ComparisonPanel({ contractId }: { contractId: string }) {
+function ComparisonPanel({ contractId, aiEnabled }: { contractId: string; aiEnabled: boolean }) {
   const [comparison, setComparison] = useState<ComparisonData | null>(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
@@ -231,11 +231,15 @@ function ComparisonPanel({ contractId }: { contractId: string }) {
   useEffect(() => {
     cancelledRef.current = false;
 
-    fetch("/api/compare", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contract_id: contractId }),
-    }).catch(() => {});
+    // Without AI, don't trigger a new comparison — just check once for a
+    // previously-computed one (e.g. from before the key was removed) and render it.
+    if (aiEnabled) {
+      fetch("/api/compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contract_id: contractId }),
+      }).catch(() => {});
+    }
 
     let attempts = 0;
     async function poll() {
@@ -257,6 +261,10 @@ function ComparisonPanel({ contractId }: { contractId: string }) {
           }
         }
       } catch {}
+      if (!aiEnabled) {
+        if (!cancelledRef.current) setLoading(false);
+        return;
+      }
       attempts++;
       if (attempts < 20 && !cancelledRef.current) {
         setTimeout(poll, 3000);
@@ -264,10 +272,10 @@ function ComparisonPanel({ contractId }: { contractId: string }) {
         setLoading(false);
       }
     }
-    setTimeout(poll, 3000);
+    setTimeout(poll, aiEnabled ? 3000 : 0);
 
     return () => { cancelledRef.current = true; };
-  }, [contractId]);
+  }, [contractId, aiEnabled]);
 
   const SEVERITY_COLOR: Record<string, string> = {
     high:   "#FCA5A5",
@@ -279,8 +287,10 @@ function ComparisonPanel({ contractId }: { contractId: string }) {
     ? comparison.field_changes.length + comparison.clause_changes.length
     : 0;
 
-  // Loading — compact pulsing banner above fields
+  // Loading — compact pulsing banner above fields (skip entirely when AI is disabled;
+  // there's no new comparison to wait for, only a possible stored one already handled above)
   if (loading && !comparison) {
+    if (!aiEnabled) return null;
     return (
       <div style={{
         marginBottom: "20px",
@@ -417,9 +427,9 @@ function ComparisonPanel({ contractId }: { contractId: string }) {
   );
 }
 
-export default function ReviewClient({ contract, extractions, pdfUrl, isManual, parentContractId }: {
+export default function ReviewClient({ contract, extractions, pdfUrl, isManual, parentContractId, aiEnabled }: {
   contract: Contract; extractions: ExtractionRow[]; pdfUrl: string | null; isManual: boolean;
-  parentContractId: string | null;
+  parentContractId: string | null; aiEnabled: boolean;
 }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
@@ -599,7 +609,7 @@ export default function ReviewClient({ contract, extractions, pdfUrl, isManual, 
 
             <ExtractionComparisonPanel contractId={contract.id} />
             {parentContractId && (
-              <ComparisonPanel contractId={contract.id} />
+              <ComparisonPanel contractId={contract.id} aiEnabled={aiEnabled} />
             )}
             <FieldPanel
               name={contract.name || contract.file_name || "Untitled"}

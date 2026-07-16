@@ -258,11 +258,13 @@ const headerBaseStyle: React.CSSProperties = {
 export default function ContractIntelligencePanel({
   contractId,
   contractContext,
+  aiEnabled,
 }: {
   contractId: string;
   contractContext?: ContractContext;
+  aiEnabled: boolean;
 }) {
-  const [status, setStatus] = useState<"loading" | "found" | "empty" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "found" | "empty" | "error" | "disabled">("loading");
   const [findings, setFindings] = useState<Finding[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [panelDraft, setPanelDraft] = useState<PanelDraftState>({ mode: "findings" });
@@ -369,6 +371,13 @@ export default function ContractIntelligencePanel({
         return;
       }
 
+      // No stored findings yet. Without AI there's nothing that will ever produce
+      // one — stop after this single check instead of polling for 60s.
+      if (!aiEnabled) {
+        if (!cancelled) setStatus("disabled");
+        return;
+      }
+
       // Schedule next poll if not timed out
       if (!cancelled && Date.now() < deadline) {
         timeoutId = setTimeout(poll, 3000);
@@ -383,7 +392,7 @@ export default function ContractIntelligencePanel({
       cancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [contractId]);
+  }, [contractId, aiEnabled]);
 
   // ── Loading state ─────────────────────────────────────────────────────────
   if (status === "loading") {
@@ -417,6 +426,31 @@ export default function ContractIntelligencePanel({
             }}
           />
           Analysing contract...
+        </div>
+        <Disclaimer />
+      </PanelShell>
+    );
+  }
+
+  // ── Disabled state (no ANTHROPIC_API_KEY, no stored analysis to show) ───────
+  if (status === "disabled") {
+    return (
+      <PanelShell
+        header={
+          <div style={headerBaseStyle}>
+            <span style={labelStyle}>Analysis</span>
+          </div>
+        }
+      >
+        <div
+          style={{
+            padding: "20px",
+            fontFamily: "var(--font-jetbrains), monospace",
+            fontSize: "13px",
+            color: "#4B5563",
+          }}
+        >
+          AI analysis unavailable — add ANTHROPIC_API_KEY to enable.
         </div>
         <Disclaimer />
       </PanelShell>
@@ -687,15 +721,28 @@ export default function ContractIntelligencePanel({
             padding: "10px 20px",
             borderTop: "1px solid rgba(255,255,255,0.06)",
             display: "flex",
+            alignItems: "center",
             justifyContent: "flex-end",
+            gap: "10px",
           }}
         >
+          {!aiEnabled && (
+            <span
+              style={{
+                fontFamily: "var(--font-jetbrains), monospace",
+                fontSize: "11px",
+                color: "#4B5563",
+              }}
+            >
+              Add ANTHROPIC_API_KEY to enable
+            </span>
+          )}
           <button
-            onClick={panelDraft.mode === "findings" ? handleDraftEmail : undefined}
-            disabled={panelDraft.mode === "drafting"}
+            onClick={aiEnabled && panelDraft.mode === "findings" ? handleDraftEmail : undefined}
+            disabled={panelDraft.mode === "drafting" || !aiEnabled}
             style={{
               ...actionButtonBase,
-              ...(panelDraft.mode === "drafting" ? { opacity: 0.5 } : {}),
+              ...(panelDraft.mode === "drafting" || !aiEnabled ? { opacity: 0.5, cursor: "not-allowed" } : {}),
             }}
           >
             Draft vendor email →

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contracts } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/auth/session";
+import { aiEnabled } from "@/lib/ai";
 import ContractDetailClient from "@/components/contracts/ContractDetailClient";
 import type { Contract } from "@/components/contracts/ContractDetailClient";
 
@@ -138,5 +139,5 @@ export default async function ContractDetailPage({ params }: Params) {
     annual_value: contract.annualValue,
   };
 
-  return <ContractDetailClient contract={mapped} versionChain={versionChain} />;
+  return <ContractDetailClient contract={mapped} versionChain={versionChain} aiEnabled={aiEnabled()} />;
 }

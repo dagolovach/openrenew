@@ -17,7 +17,7 @@ type State =
   | { status: "confirming"; contractId: string; detected: DetectedParties }
   | { status: "error"; message: string };
 
-export default function UploadZone({ contractCount }: { contractCount: number }) {
+export default function UploadZone({ contractCount, aiEnabled }: { contractCount: number; aiEnabled: boolean }) {
   const [state, setState] = useState<State>({ status: "idle" });
   const [isDragOver, setIsDragOver] = useState(false);
   const [partyA, setPartyA] = useState("");
@@ -64,6 +64,17 @@ export default function UploadZone({ contractCount }: { contractCount: number })
     }
 
     const { contract_id, detected_parties } = await res.json();
+
+    if (!aiEnabled) {
+      // No AI means no party-detection/anonymization/extraction pipeline to run — the
+      // upload route already lands the contract in the same "manual entry" state used
+      // when extraction fails, so route straight there instead of showing the
+      // pre-AI-processing party confirmation step.
+      setState({ status: "idle" });
+      router.push(`/dashboard/review/${contract_id}`);
+      return;
+    }
+
     setPartyA(detected_parties?.party_a ?? "");
     setPartyB(detected_parties?.party_b ?? "");
     setState({

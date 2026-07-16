@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contracts, contractExtractions, activityLog } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { aiEnabled } from "@/lib/ai";
 import { z } from "zod";
 
 const extractSchema = z.object({
@@ -97,6 +98,13 @@ export async function POST(request: Request) {
 
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  if (!aiEnabled()) {
+    return NextResponse.json(
+      { error: "ai_disabled", message: "Set ANTHROPIC_API_KEY to enable AI features." },
+      { status: 503 }
+    );
+  }
 
   const userId = user.id;
 

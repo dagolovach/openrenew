@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { contracts } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
 import { savePdf } from "@/lib/storage";
+import { aiEnabled } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
@@ -43,6 +44,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "File upload failed" }, { status: 500 });
   }
 
+  const aiOn = aiEnabled();
+
   let contractName = fileName.replace(/\.pdf$/i, "");
   let contractVersion = 1;
   if (parentContractId) {
@@ -56,14 +59,17 @@ export async function POST(request: Request) {
     }
   }
 
+  // Without AI, there is no party-detection/anonymization/extraction pipeline to run —
+  // land the contract straight in the same "manual entry" state used when extraction
+  // fails, so the review page shows the PDF with empty, freely-editable fields.
   try {
     await db.insert(contracts).values({
       id: contractId,
       createdBy: user.id,
       name: contractName,
       category: "other",
-      status: "party_review",
-      extractionStatus: "pending",
+      status: aiOn ? "party_review" : "draft",
+      extractionStatus: aiOn ? "pending" : "manual",
       filePath,
       fileName,
       fileSizeBytes: file.size,
@@ -79,7 +85,7 @@ export async function POST(request: Request) {
   let detectedParties: { party_a: string | null; party_b: string | null; confidence: number } = {
     party_a: null, party_b: null, confidence: 0,
   };
-  if (process.env.ANTHROPIC_API_KEY) {
+  if (aiOn) {
     try {
       const detectRes = await fetch(`${PYTHON_SERVICE_URL}/detect-parties`, {
         method: "POST",

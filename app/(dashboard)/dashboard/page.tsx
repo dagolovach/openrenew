@@ -8,6 +8,7 @@ import { alerts as alertsTable, contracts } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/auth/session";
 import { getSetting } from "@/lib/db/settings";
 import { isSmtpConfigured } from "@/lib/email-smtp";
+import { aiEnabled } from "@/lib/ai";
 import UploadZone from "@/components/dashboard/upload-zone";
 import DashboardNav from "@/components/dashboard/dashboard-nav";
 import DashboardMetrics from "@/components/dashboard/DashboardMetrics";
@@ -133,7 +134,7 @@ export default async function DashboardPage() {
 
         {/* ── Upload zone ────────────────────────────────── */}
         <div style={{ marginBottom: "24px" }}>
-          <UploadZone contractCount={contractCount} />
+          <UploadZone contractCount={contractCount} aiEnabled={aiEnabled()} />
         </div>
 
         {/* ── Contract list (streams in after shell renders) ── */}
