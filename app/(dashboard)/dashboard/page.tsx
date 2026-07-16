@@ -16,7 +16,7 @@ import ContractsFeed from "./contracts-feed";
 import ContractsFeedSkeleton from "@/components/dashboard/contracts-feed-skeleton";
 import "./dashboard.css";
 
-export const metadata = { title: "Dashboard — OpenRenew" };
+export const metadata = { title: "Dashboard" };
 
 export const dynamic = "force-dynamic";
 

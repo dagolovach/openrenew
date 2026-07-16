@@ -29,7 +29,7 @@ export function Logo({ theme = 'dark', size = 'md' }: LogoProps) {
         color: '#0A0F1E',
         flexShrink: 0,
       }}>
-        R
+        O
       </div>
       <span style={{
         fontFamily: 'var(--font-jetbrains), monospace',
@@ -38,7 +38,7 @@ export function Logo({ theme = 'dark', size = 'md' }: LogoProps) {
         color: textColor,
         letterSpacing: '-0.02em',
       }}>
-        enewl
+        penRenew
       </span>
     </div>
   )

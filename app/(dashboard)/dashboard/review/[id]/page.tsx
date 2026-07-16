@@ -8,7 +8,7 @@ import { aiEnabled } from "@/lib/ai";
 import ReviewClient from "@/components/review/review-client";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: 'Review Contract — OpenRenew' };
+export const metadata = { title: 'Review Contract' };
 
 type Params = {
   params: Promise<{ id: string }>;

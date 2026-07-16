@@ -8,7 +8,7 @@ import RenewalCalendar from '@/components/calendar/RenewalCalendar';
 import DashboardNav from '@/components/dashboard/dashboard-nav';
 import '../dashboard.css';
 
-export const metadata = { title: 'Renewal Calendar — OpenRenew' };
+export const metadata = { title: 'Renewal Calendar' };
 export const dynamic = 'force-dynamic';
 
 export default async function CalendarPage() {
