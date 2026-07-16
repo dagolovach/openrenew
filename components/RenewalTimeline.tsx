@@ -4,6 +4,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { extractNumericValue } from "@/lib/spend";
+import { DecisionBadge } from "@/components/ui/DecisionBadge";
 
 export interface TimelineContract {
   id: string;
@@ -15,35 +16,6 @@ export interface TimelineContract {
   annual_value: number | null;
   contract_value?: string | null;
   renewal_decision?: string | null;
-}
-
-const DECISION_BADGE: Record<string, { label: string; color: string }> = {
-  renewing: { label: "Renewing", color: "#10B981" },
-  canceling: { label: "Canceling", color: "#dc2626" },
-  negotiating: { label: "Negotiating", color: "#f59e0b" },
-};
-
-function DecisionBadge({ decision }: { decision?: string | null }) {
-  if (!decision) return null;
-  const cfg = DECISION_BADGE[decision];
-  if (!cfg) return null;
-  return (
-    <span
-      style={{
-        fontSize: "10px",
-        fontFamily: "var(--font-jetbrains)",
-        padding: "2px 6px",
-        borderRadius: "4px",
-        background: "transparent",
-        border: `1px solid ${cfg.color}`,
-        color: cfg.color,
-        marginLeft: "8px",
-        flexShrink: 0,
-      }}
-    >
-      {cfg.label}
-    </span>
-  );
 }
 
 function resolveDisplayValue(contract: TimelineContract): number | null {
@@ -300,7 +272,7 @@ export function RenewalTimeline({
                     }}
                   >
                     {contract.name}
-                    <DecisionBadge decision={contract.renewal_decision} />
+                    <DecisionBadge decision={contract.renewal_decision} style={{ marginLeft: "8px" }} />
                   </div>
                   {(contract.party_a || contract.party_b) && (
                     <div

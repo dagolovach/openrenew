@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import RenewalUploadButton from "./RenewalUploadButton";
+import { DecisionBadge, DECISION_BADGE } from "@/components/ui/DecisionBadge";
 
 const ContractIntelligencePanel = dynamic(() => import("./ContractIntelligencePanel"), { ssr: false });
 const RenewalHistoryPanel = dynamic(() => import("./RenewalHistoryPanel"), { ssr: false });
@@ -62,19 +63,11 @@ function categoryLabel(cat: string | null): string | null {
   return map[cat.toLowerCase()] ?? cat;
 }
 
-const DECISION_BADGE: Record<string, { label: string; color: string }> = {
-  renewing: { label: "Renewing", color: "#10B981" },
-  canceling: { label: "Canceling", color: "#dc2626" },
-  negotiating: { label: "Negotiating", color: "#f59e0b" },
-};
-
 function DecisionBadgeWithClear({ contractId, decision }: { contractId: string; decision: string | null }) {
   const router = useRouter();
   const [clearing, setClearing] = useState(false);
 
-  if (!decision) return null;
-  const cfg = DECISION_BADGE[decision];
-  if (!cfg) return null;
+  if (!decision || !DECISION_BADGE[decision]) return null;
 
   async function handleClear() {
     setClearing(true);
@@ -92,19 +85,7 @@ function DecisionBadgeWithClear({ contractId, decision }: { contractId: string; 
 
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
-      <span
-        style={{
-          fontSize: "10px",
-          fontFamily: "var(--font-jetbrains), monospace",
-          padding: "2px 6px",
-          borderRadius: "4px",
-          background: "transparent",
-          border: `1px solid ${cfg.color}`,
-          color: cfg.color,
-        }}
-      >
-        {cfg.label}
-      </span>
+      <DecisionBadge decision={decision} />
       <button
         type="button"
         onClick={handleClear}
