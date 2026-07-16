@@ -1,4 +1,4 @@
-import { buildTriageQueue, nextUp, type TriageContract } from "@/lib/triage";
+import { buildTriageQueue, horizonEntries, nextUp, type TriageContract } from "@/lib/triage";
 
 const TODAY = new Date("2026-07-16T12:00:00Z");
 
@@ -73,5 +73,19 @@ describe("nextUp", () => {
   });
   it("returns null when nothing is beyond the window", () => {
     expect(nextUp([contract({ expiry_date: "2026-07-20" })], TODAY)).toBeNull();
+  });
+});
+
+describe("horizonEntries", () => {
+  it("includes queue-window and future items sorted ascending, capped at horizon", () => {
+    const entries = horizonEntries([
+      contract({ id: "soon", expiry_date: "2026-08-01" }),
+      contract({ id: "later", expiry_date: "2026-12-01" }),
+      contract({ id: "beyond", expiry_date: "2027-09-01" }),
+    ], TODAY);
+    expect(entries.map((e: { contract_id: string }) => e.contract_id)).toEqual(["soon", "later"]);
+  });
+  it("respects eligibility (decided/snoozed excluded)", () => {
+    expect(horizonEntries([contract({ expiry_date: "2026-09-01", renewal_decision: "renewing" })], TODAY)).toHaveLength(0);
   });
 });

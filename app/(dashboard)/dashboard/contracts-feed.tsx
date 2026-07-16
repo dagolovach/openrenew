@@ -2,11 +2,11 @@
 import { desc, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contractExtractions, contracts } from "@/lib/db/schema";
-import ContractList from "@/components/dashboard/contract-list";
+import ContractList, { type SpendStat } from "@/components/dashboard/contract-list";
 import { RenewalTimeline } from "@/components/RenewalTimeline";
 import { isExpired } from "@/lib/utils";
 
-export default async function ContractsFeed() {
+export default async function ContractsFeed({ spend }: { spend: SpendStat }) {
   // Fetch contracts, then extractions for those contracts, and merge in JS
   // (no left-join relation configured on the Drizzle schema).
   const contractRows = await db.query.contracts.findMany({
@@ -29,6 +29,7 @@ export default async function ContractsFeed() {
       updatedAt: true,
       createdAt: true,
       parentContractId: true,
+      renewalDecision: true,
     },
   });
 
@@ -82,6 +83,7 @@ export default async function ContractsFeed() {
       created_at: c.createdAt.toISOString(),
       parent_contract_id: c.parentContractId,
       unresolved_count: unresolvedCount,
+      renewal_decision: c.renewalDecision,
     };
   });
 
@@ -115,6 +117,7 @@ export default async function ContractsFeed() {
     notice_period_days: c.notice_period_days,
     annual_value: c.annual_value,
     contract_value: c.contract_value,
+    renewal_decision: c.renewal_decision,
   }));
 
   const expiredTimelineContracts = expiredContracts.map((c) => ({
@@ -126,14 +129,15 @@ export default async function ContractsFeed() {
     notice_period_days: c.notice_period_days,
     annual_value: c.annual_value,
     contract_value: c.contract_value,
+    renewal_decision: c.renewal_decision,
   }));
 
   return (
     <>
-      {/* Needs review — only when non-empty */}
-      {needsReviewContracts.length > 0 && (
+      {/* Needs review — only when non-empty, or spend header alone when there's nothing to review */}
+      {(needsReviewContracts.length > 0 || spend.trackedCount > 0) && (
         <div style={{ marginBottom: 20 }}>
-          <ContractList initialContracts={needsReviewContracts} />
+          <ContractList initialContracts={needsReviewContracts} spend={spend} />
         </div>
       )}
 

@@ -74,6 +74,34 @@ function buildPartiesStr(partyA?: string | null, partyB?: string | null): string
   return null;
 }
 
+const DECISION_BADGE: Record<string, { label: string; color: string }> = {
+  renewing: { label: "Renewing", color: "#10B981" },
+  canceling: { label: "Canceling", color: "#dc2626" },
+  negotiating: { label: "Negotiating", color: "#f59e0b" },
+};
+
+function DecisionBadge({ decision }: { decision?: string | null }) {
+  if (!decision) return null;
+  const cfg = DECISION_BADGE[decision];
+  if (!cfg) return null;
+  return (
+    <span
+      style={{
+        fontSize: "10px",
+        fontFamily: "var(--font-jetbrains), monospace",
+        padding: "2px 6px",
+        borderRadius: "4px",
+        background: "transparent",
+        border: `1px solid ${cfg.color}`,
+        color: cfg.color,
+        flexShrink: 0,
+      }}
+    >
+      {cfg.label}
+    </span>
+  );
+}
+
 const ContractCard = React.memo(
   function ContractCard({
     id,
@@ -82,6 +110,7 @@ const ContractCard = React.memo(
     partyB,
     contractValue,
     noticePeriodDays,
+    renewalDecision,
     cardState,
     onDelete,
   }: {
@@ -91,6 +120,7 @@ const ContractCard = React.memo(
     partyB?: string | null;
     contractValue?: string | null;
     noticePeriodDays?: number | null;
+    renewalDecision?: string | null;
     cardState: CardState;
     onDelete?: () => void;
   }) {
@@ -495,6 +525,7 @@ const ContractCard = React.memo(
               }}>
                 {displayName}
               </span>
+              <DecisionBadge decision={renewalDecision} />
               {showNoticeBadge && noticeActByDate && (
                 <span style={{
                   fontSize: "11px",
@@ -763,6 +794,7 @@ const ContractCard = React.memo(
     prev.partyB === next.partyB &&
     prev.contractValue === next.contractValue &&
     prev.noticePeriodDays === next.noticePeriodDays &&
+    prev.renewalDecision === next.renewalDecision &&
     cardStateEqual(prev.cardState, next.cardState) &&
     prev.onDelete === next.onDelete
 );

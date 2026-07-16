@@ -111,6 +111,7 @@ export default async function ContractDetailPage({ params }: Params) {
       parentContractId: true,
       contractVersion: true,
       annualValue: true,
+      renewalDecision: true,
     },
   });
 
@@ -137,6 +138,7 @@ export default async function ContractDetailPage({ params }: Params) {
     parent_contract_id: contract.parentContractId,
     contract_version: contract.contractVersion,
     annual_value: contract.annualValue,
+    renewal_decision: contract.renewalDecision,
   };
 
   return <ContractDetailClient contract={mapped} versionChain={versionChain} aiEnabled={aiEnabled()} />;

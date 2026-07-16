@@ -5,6 +5,9 @@ import { useEffect, useRef, useState, useMemo, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import ContractCard, { CardState } from "./contract-card";
 import { isExpired, daysUntil, activeExpiryDate } from "@/lib/utils";
+import { formatAnnualValue } from "@/components/RenewalTimeline";
+
+export type SpendStat = { totalSpend: number; trackedCount: number };
 
 
 type ContractRow = {
@@ -26,6 +29,7 @@ type ContractRow = {
   created_at: string;
   unresolved_count: number;
   parent_contract_id: string | null;
+  renewal_decision?: string | null;
 };
 
 const POLL_INTERVAL_MS = 3000;
@@ -213,7 +217,13 @@ const SECTIONS: Section[] = [
 
 // ── ContractList ──────────────────────────────────────────────────────────────
 
-export default function ContractList({ initialContracts }: { initialContracts: ContractRow[] }) {
+export default function ContractList({
+  initialContracts,
+  spend,
+}: {
+  initialContracts: ContractRow[];
+  spend?: SpendStat;
+}) {
   const router = useRouter();
   const [contracts, setContracts] = useState(initialContracts);
   const [upcomingExpanded, setUpcomingExpanded] = useState(false);
@@ -366,28 +376,47 @@ export default function ContractList({ initialContracts }: { initialContracts: C
   const timedOutSnapshot = timedOut.current;
   const deleteHandlersSnapshot = deleteHandlers.current;
 
-  if (sorted.length === 0) {
-    return (
-      <div style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "64px 24px",
-        textAlign: "center",
+  const spendHeader = spend && spend.trackedCount > 0 ? (
+    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+      <span style={{
+        fontSize: "12px",
+        color: "#6B7280",
+        fontFamily: "var(--font-jetbrains), monospace",
       }}>
-        <div style={{ fontSize: "15px", color: "#9CA3AF", marginBottom: "8px" }}>
-          No contracts tracked yet.
+        {`~${formatAnnualValue(spend.totalSpend)}/yr tracked across ${spend.trackedCount} contract${spend.trackedCount === 1 ? "" : "s"}`}
+      </span>
+    </div>
+  ) : null;
+
+  if (sorted.length === 0) {
+    // Only reachable when there's genuinely nothing tracked (mount is gated
+    // on needsReviewContracts.length > 0 || spend.trackedCount > 0 upstream),
+    // so the spend header never co-occurs with this branch in practice.
+    return (
+      <>
+        {spendHeader}
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "64px 24px",
+          textAlign: "center",
+        }}>
+          <div style={{ fontSize: "15px", color: "#9CA3AF", marginBottom: "8px" }}>
+            No contracts tracked yet.
+          </div>
+          <div style={{ fontSize: "13px", color: "#6B7280", maxWidth: "280px", lineHeight: 1.6 }}>
+            Upload your first contract above and OpenRenew will extract the key dates automatically.
+          </div>
         </div>
-        <div style={{ fontSize: "13px", color: "#6B7280", maxWidth: "280px", lineHeight: 1.6 }}>
-          Upload your first contract above and OpenRenew will extract the key dates automatically.
-        </div>
-      </div>
+      </>
     );
   }
 
   return (
     <>
+    {spendHeader}
     <div style={{ border: "1px solid rgba(255,255,255,0.06)", borderRadius: "8px", overflow: "hidden" }}>
       {SECTIONS.map((section) => {
         const sectionContracts = sorted.filter(section.filter);
@@ -410,6 +439,7 @@ export default function ContractList({ initialContracts }: { initialContracts: C
                   partyB={c.party_b ?? null}
                   contractValue={c.contract_value ?? null}
                   noticePeriodDays={c.notice_period_days ?? null}
+                  renewalDecision={c.renewal_decision ?? null}
                   cardState={computeCardState(c, timedOutSnapshot.has(c.id))}
                   onDelete={getDeleteHandler(c.id)}
                 />
@@ -468,6 +498,7 @@ export default function ContractList({ initialContracts }: { initialContracts: C
                 partyB={c.party_b ?? null}
                 contractValue={c.contract_value ?? null}
                 noticePeriodDays={c.notice_period_days ?? null}
+                renewalDecision={c.renewal_decision ?? null}
                 cardState={computeCardState(c, timedOutSnapshot.has(c.id))}
                 onDelete={getDeleteHandler(c.id)}
               />

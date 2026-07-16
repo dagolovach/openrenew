@@ -2,17 +2,18 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { and, eq, inArray, lte, notInArray } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { alerts as alertsTable, contractAnalysis, contracts } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/auth/session";
 import { getSetting } from "@/lib/db/settings";
 import { isSmtpConfigured } from "@/lib/email-smtp";
 import { aiEnabled } from "@/lib/ai";
-import { buildTriageQueue, nextUp, type TriageContract } from "@/lib/triage";
+import { buildTriageQueue, horizonEntries, nextUp, type TriageContract } from "@/lib/triage";
 import UploadZone from "@/components/dashboard/upload-zone";
 import DashboardNav from "@/components/dashboard/dashboard-nav";
 import TriageQueue from "@/components/dashboard/triage-queue";
+import HorizonTimeline from "@/components/dashboard/horizon-timeline";
 import ContractsFeed from "./contracts-feed";
 import ContractsFeedSkeleton from "@/components/dashboard/contracts-feed-skeleton";
 import "./dashboard.css";
@@ -70,20 +71,26 @@ async function getTriageData() {
   return { items, next, aiFindingsByContract, triageContracts: mapped };
 }
 
+async function getSpendStat() {
+  const todayStr = new Date().toISOString().split("T")[0];
+  const activeContracts = await db.query.contracts.findMany({
+    where: and(eq(contracts.status, "active"), or(isNull(contracts.expiryDate), gte(contracts.expiryDate, todayStr))),
+    columns: { annualValue: true },
+  });
+  const values = activeContracts.map((c) => c.annualValue).filter((v): v is number => v != null && v > 0);
+  return { totalSpend: values.reduce((a, b) => a + b, 0), trackedCount: values.length };
+}
+
 export default async function DashboardPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const openContracts = await db.query.contracts.findMany({
-    where: notInArray(contracts.status, ["expired", "renewed"]),
-    columns: { id: true },
-  });
-  const contractCount = openContracts.length;
-
   const { overdueCount, uniqueContracts, channelConfigured } = await getDeliveryBannerData();
   const showDeliveryBanner = overdueCount > 0 && !channelConfigured;
 
-  const { items, next, aiFindingsByContract } = await getTriageData();
+  const { items, next, aiFindingsByContract, triageContracts } = await getTriageData();
+  const spend = await getSpendStat();
+  const timelineEntries = horizonEntries(triageContracts);
 
   return (
     <div style={{ fontFamily: "var(--font-inter), system-ui, sans-serif", color: "#F9FAFB" }}>
@@ -137,15 +144,18 @@ export default async function DashboardPage() {
           aiEnabled={aiEnabled()}
         />
 
-        {/* ── Upload zone ────────────────────────────────── */}
-        <div style={{ marginBottom: "24px" }}>
-          <UploadZone contractCount={contractCount} aiEnabled={aiEnabled()} />
-        </div>
+        {/* ── Horizon timeline — next 12 months of decision points ── */}
+        <HorizonTimeline entries={timelineEntries} />
 
         {/* ── Contract list (streams in after shell renders) ── */}
         <Suspense fallback={<ContractsFeedSkeleton />}>
-          <ContractsFeed />
+          <ContractsFeed spend={spend} />
         </Suspense>
+
+        {/* ── Upload zone ────────────────────────────────── */}
+        <div style={{ marginTop: "24px" }}>
+          <UploadZone aiEnabled={aiEnabled()} />
+        </div>
       </main>
     </div>
   );

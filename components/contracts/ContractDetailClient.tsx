@@ -4,6 +4,7 @@
 import React, { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import RenewalUploadButton from "./RenewalUploadButton";
 
 const ContractIntelligencePanel = dynamic(() => import("./ContractIntelligencePanel"), { ssr: false });
@@ -29,6 +30,7 @@ export type Contract = {
   parent_contract_id: string | null;
   contract_version: number | null;
   annual_value: number | null;
+  renewal_decision: string | null;
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -58,6 +60,72 @@ function categoryLabel(cat: string | null): string | null {
     other: "Other",
   };
   return map[cat.toLowerCase()] ?? cat;
+}
+
+const DECISION_BADGE: Record<string, { label: string; color: string }> = {
+  renewing: { label: "Renewing", color: "#10B981" },
+  canceling: { label: "Canceling", color: "#dc2626" },
+  negotiating: { label: "Negotiating", color: "#f59e0b" },
+};
+
+function DecisionBadgeWithClear({ contractId, decision }: { contractId: string; decision: string | null }) {
+  const router = useRouter();
+  const [clearing, setClearing] = useState(false);
+
+  if (!decision) return null;
+  const cfg = DECISION_BADGE[decision];
+  if (!cfg) return null;
+
+  async function handleClear() {
+    setClearing(true);
+    try {
+      const res = await fetch(`/api/contracts/${contractId}/decision`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: null }),
+      });
+      if (res.ok) router.refresh();
+    } finally {
+      setClearing(false);
+    }
+  }
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+      <span
+        style={{
+          fontSize: "10px",
+          fontFamily: "var(--font-jetbrains), monospace",
+          padding: "2px 6px",
+          borderRadius: "4px",
+          background: "transparent",
+          border: `1px solid ${cfg.color}`,
+          color: cfg.color,
+        }}
+      >
+        {cfg.label}
+      </span>
+      <button
+        type="button"
+        onClick={handleClear}
+        disabled={clearing}
+        style={{
+          fontSize: "11px",
+          color: "#6B7280",
+          background: "none",
+          border: "none",
+          padding: 0,
+          cursor: clearing ? "not-allowed" : "pointer",
+          fontFamily: "var(--font-inter), system-ui, sans-serif",
+          textDecoration: "none",
+        }}
+        onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.textDecoration = "underline")}
+        onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.textDecoration = "none")}
+      >
+        {clearing ? "Clearing…" : "clear"}
+      </button>
+    </span>
+  );
 }
 
 type BandColors = {
@@ -506,19 +574,22 @@ export default function ContractDetailClient({
           >
             {/* Left column */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <h1
-                style={{
-                  fontFamily: "var(--font-inter), system-ui, sans-serif",
-                  fontSize: "20px",
-                  fontWeight: 600,
-                  color: "#F9FAFB",
-                  margin: "0 0 6px 0",
-                  letterSpacing: "0.01em",
-                  lineHeight: 1.2,
-                }}
-              >
-                {formatContractName(contract.name)}
-              </h1>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px", flexWrap: "wrap" }}>
+                <h1
+                  style={{
+                    fontFamily: "var(--font-inter), system-ui, sans-serif",
+                    fontSize: "20px",
+                    fontWeight: 600,
+                    color: "#F9FAFB",
+                    margin: 0,
+                    letterSpacing: "0.01em",
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {formatContractName(contract.name)}
+                </h1>
+                <DecisionBadgeWithClear contractId={contract.id} decision={contract.renewal_decision} />
+              </div>
 
               {(contract.party_a || contract.party_b) && (
                 <div

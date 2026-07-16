@@ -17,7 +17,7 @@ type State =
   | { status: "confirming"; contractId: string; detected: DetectedParties }
   | { status: "error"; message: string };
 
-export default function UploadZone({ contractCount, aiEnabled }: { contractCount: number; aiEnabled: boolean }) {
+export default function UploadZone({ aiEnabled }: { aiEnabled: boolean }) {
   const [state, setState] = useState<State>({ status: "idle" });
   const [isDragOver, setIsDragOver] = useState(false);
   const [partyA, setPartyA] = useState("");
@@ -271,8 +271,6 @@ export default function UploadZone({ contractCount, aiEnabled }: { contractCount
     );
   }
 
-  const isCompact = contractCount > 0;
-
   return (
     <div>
       <div
@@ -286,13 +284,12 @@ export default function UploadZone({ contractCount, aiEnabled }: { contractCount
         onDragLeave={() => setIsDragOver(false)}
         onClick={() => inputRef.current?.click()}
         style={{
-          position: isCompact ? undefined : "relative",
-          border: `1px dashed ${isDragOver ? "#10B981" : isCompact ? "rgba(255,255,255,0.2)" : "rgba(16,185,129,0.3)"}`,
+          border: `1px dashed ${isDragOver ? "#10B981" : "rgba(255,255,255,0.2)"}`,
           borderRadius: "8px",
-          background: isDragOver ? "rgba(16,185,129,0.04)" : isCompact ? "transparent" : "rgba(16,185,129,0.03)",
+          background: isDragOver ? "rgba(16,185,129,0.04)" : "transparent",
           cursor: "pointer",
           transition: "all 200ms ease",
-          padding: isCompact ? "12px 20px" : "28px 24px",
+          padding: "16px 20px",
           overflow: "hidden",
         }}
       >
@@ -304,118 +301,44 @@ export default function UploadZone({ contractCount, aiEnabled }: { contractCount
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
         />
 
-        {isCompact ? (
-          // COMPACT ROW
-          state.status === "uploading" ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span
-                className="pulse-dot"
-                style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#10B981", display: "inline-block", flexShrink: 0 }}
-              />
-              <span style={{ fontSize: "14px", color: "#10B981", fontFamily: "var(--font-jetbrains), monospace" }}>Uploading…</span>
-            </div>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              {/* Upload icon */}
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: isDragOver ? 1 : 0.7 }}>
-                <path d="M12 19V5M5 12l7-7 7 7" />
-              </svg>
-              {/* Primary text */}
-              <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "14px", color: "#F9FAFB" }}>
-                Drop a contract PDF here or click to browse
-              </span>
-              <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "14px", color: "#6B7280" }}>
-                · PDF only · max 20MB
-              </span>
-              {/* Error inline */}
-              {state.status === "error" && (
-                <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "13px", color: "#EF4444" }}>
-                  · {state.message}
-                </span>
-              )}
-              {/* Manual link — right aligned */}
-              <Link
-                href="/dashboard/review/new?manual=1"
-                onClick={(e) => e.stopPropagation()}
-                style={{ marginLeft: "auto", fontFamily: "var(--font-inter), sans-serif", fontSize: "13px", color: "#10B981", textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}
-                onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.textDecoration = "underline")}
-                onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.textDecoration = "none")}
-              >
-                Add contract manually →
-              </Link>
-            </div>
-          )
+        {state.status === "uploading" ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span
+              className="pulse-dot"
+              style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#10B981", display: "inline-block", flexShrink: 0 }}
+            />
+            <span style={{ fontSize: "14px", color: "#10B981", fontFamily: "var(--font-jetbrains), monospace" }}>Uploading…</span>
+          </div>
         ) : (
-          // FULL LAYOUT
-          <>
-            {/* Upload arrow icon — hidden while uploading */}
-            {state.status !== "uploading" && (
-              <div style={{ marginBottom: "10px" }}>
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#10B981"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ margin: "0 auto", display: "block", opacity: isDragOver ? 1 : 0.7, transition: "opacity 200ms" }}
-                >
-                  <path d="M12 19V5M5 12l7-7 7 7" />
-                </svg>
-              </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            {/* Upload icon */}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: isDragOver ? 1 : 0.7 }}>
+              <path d="M12 19V5M5 12l7-7 7 7" />
+            </svg>
+            {/* Primary text */}
+            <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "14px", color: "#F9FAFB" }}>
+              Drop a contract PDF here or click to browse
+            </span>
+            <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "14px", color: "#6B7280" }}>
+              · PDF only · max 20MB
+            </span>
+            {/* Error inline */}
+            {state.status === "error" && (
+              <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "13px", color: "#EF4444" }}>
+                · {state.message}
+              </span>
             )}
-
-            {state.status === "uploading" ? (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-                <span
-                  className="pulse-dot"
-                  style={{
-                    width: "6px",
-                    height: "6px",
-                    borderRadius: "50%",
-                    background: "#10B981",
-                    display: "inline-block",
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{
-                  fontSize: "14px",
-                  color: "#10B981",
-                  fontFamily: "var(--font-jetbrains), monospace",
-                }}>
-                  Uploading…
-                </span>
-              </div>
-            ) : (
-              <>
-                <p style={{ fontSize: "14px", fontWeight: 500, color: "#F9FAFB", marginBottom: "4px", textAlign: "center" }}>
-                  Drop a contract PDF here
-                </p>
-                <p style={{ fontSize: "12px", color: "#6B7280", textAlign: "center" }}>
-                  or click to browse · PDF only · max 20MB
-                </p>
-                {state.status === "error" && (
-                  <p style={{ fontSize: "12px", color: "#EF4444", marginTop: "8px", textAlign: "center" }}>
-                    {state.message}
-                  </p>
-                )}
-                <p style={{ fontSize: "13px", color: "#6B7280", marginTop: "12px", textAlign: "center" }}>
-                  Don&apos;t have a PDF?{" "}
-                  <Link
-                    href="/dashboard/review/new?manual=1"
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ color: "#10B981", textDecoration: "none" }}
-                    onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.textDecoration = "underline")}
-                    onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.textDecoration = "none")}
-                  >
-                    Add contract manually →
-                  </Link>
-                </p>
-              </>
-            )}
-          </>
+            {/* Manual link — right aligned */}
+            <Link
+              href="/dashboard/review/new?manual=1"
+              onClick={(e) => e.stopPropagation()}
+              style={{ marginLeft: "auto", fontFamily: "var(--font-inter), sans-serif", fontSize: "13px", color: "#10B981", textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}
+              onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.textDecoration = "underline")}
+              onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.textDecoration = "none")}
+            >
+              Add contract manually →
+            </Link>
+          </div>
         )}
       </div>
     </div>

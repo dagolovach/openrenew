@@ -14,6 +14,36 @@ export interface TimelineContract {
   notice_period_days: number | null;
   annual_value: number | null;
   contract_value?: string | null;
+  renewal_decision?: string | null;
+}
+
+const DECISION_BADGE: Record<string, { label: string; color: string }> = {
+  renewing: { label: "Renewing", color: "#10B981" },
+  canceling: { label: "Canceling", color: "#dc2626" },
+  negotiating: { label: "Negotiating", color: "#f59e0b" },
+};
+
+function DecisionBadge({ decision }: { decision?: string | null }) {
+  if (!decision) return null;
+  const cfg = DECISION_BADGE[decision];
+  if (!cfg) return null;
+  return (
+    <span
+      style={{
+        fontSize: "10px",
+        fontFamily: "var(--font-jetbrains)",
+        padding: "2px 6px",
+        borderRadius: "4px",
+        background: "transparent",
+        border: `1px solid ${cfg.color}`,
+        color: cfg.color,
+        marginLeft: "8px",
+        flexShrink: 0,
+      }}
+    >
+      {cfg.label}
+    </span>
+  );
 }
 
 function resolveDisplayValue(contract: TimelineContract): number | null {
@@ -56,7 +86,7 @@ function sortContracts(contracts: TimelineContract[]): TimelineContract[] {
   });
 }
 
-function formatAnnualValue(value: number): string {
+export function formatAnnualValue(value: number): string {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1000) return `$${Math.round(value / 1000)}k`;
   return `$${value}`;
@@ -270,6 +300,7 @@ export function RenewalTimeline({
                     }}
                   >
                     {contract.name}
+                    <DecisionBadge decision={contract.renewal_decision} />
                   </div>
                   {(contract.party_a || contract.party_b) && (
                     <div

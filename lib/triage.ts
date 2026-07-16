@@ -103,3 +103,13 @@ export function nextUp(contracts: TriageContract[], today: Date = new Date()): T
     .sort((a, b) => a._sortMs - b._sortMs);
   return future.length ? strip(future[0]) : null;
 }
+
+/** All eligible decision points within the horizon (default 365 days), sorted ascending. */
+export function horizonEntries(contracts: TriageContract[], today: Date = new Date(), horizonDays = 365): TriageItem[] {
+  return contracts
+    .filter((c) => eligible(c, today))
+    .map((c) => toItem(c, today))
+    .filter((i): i is SortableItem => i != null && i.days_left >= 0 && i.days_left <= horizonDays)
+    .sort((a, b) => a._sortMs - b._sortMs)
+    .map(strip);
+}
