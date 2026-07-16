@@ -1,4 +1,41 @@
 services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://openrenew:${POSTGRES_PASSWORD:-openrenew}@postgres:5432/openrenew
+      SESSION_SECRET: ${SESSION_SECRET}
+      EXTRACTION_SERVICE_SECRET: ${EXTRACTION_SERVICE_SECRET}
+      CRON_SECRET: ${CRON_SECRET}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      PYTHON_SERVICE_URL: http://python:8000
+      DATA_DIR: /data/contracts
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      ALERT_RECIPIENTS: ${ALERT_RECIPIENTS:-}
+      AUTH_DISABLED: ${AUTH_DISABLED:-false}
+    volumes:
+      - contracts-data:/data/contracts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      python:
+        condition: service_started
+
+  python:
+    build: ./python-service
+    environment:
+      EXTRACTION_SERVICE_SECRET: ${EXTRACTION_SERVICE_SECRET}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DATA_DIR: /data/contracts
+    volumes:
+      - contracts-data:/data/contracts:ro
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -7,13 +44,21 @@ services:
       POSTGRES_DB: openrenew
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5432:5432"
+    # ports:
+    #   - "127.0.0.1:5432:5432"  # uncomment for local `npm run dev` / `npm run db:migrate` access
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U openrenew"]
       interval: 5s
       timeout: 3s
       retries: 10
 
+  cron:
+    build: ./docker/cron
+    environment:
+      CRON_SECRET: ${CRON_SECRET}
+    depends_on:
+      - web
+
 volumes:
   pgdata:
+  contracts-data:
