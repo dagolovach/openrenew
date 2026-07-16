@@ -2,7 +2,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { and, eq, gte, isNotNull, isNull, lte, notInArray, or } from "drizzle-orm";
+import { and, eq, lte, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { alerts as alertsTable, contracts } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/auth/session";
@@ -11,7 +11,6 @@ import { isSmtpConfigured } from "@/lib/email-smtp";
 import { aiEnabled } from "@/lib/ai";
 import UploadZone from "@/components/dashboard/upload-zone";
 import DashboardNav from "@/components/dashboard/dashboard-nav";
-import DashboardMetrics from "@/components/dashboard/DashboardMetrics";
 import ContractsFeed from "./contracts-feed";
 import ContractsFeedSkeleton from "@/components/dashboard/contracts-feed-skeleton";
 import "./dashboard.css";
@@ -19,37 +18,6 @@ import "./dashboard.css";
 export const metadata = { title: "Dashboard" };
 
 export const dynamic = "force-dynamic";
-
-async function getDashboardMetrics() {
-  const todayStr = new Date().toISOString().split("T")[0];
-
-  const activeContracts = await db.query.contracts.findMany({
-    where: and(
-      eq(contracts.status, "active"),
-      or(isNull(contracts.expiryDate), gte(contracts.expiryDate, todayStr))
-    ),
-    columns: { annualValue: true },
-  });
-
-  const contractsManaged = activeContracts.length;
-  const parsedValues = activeContracts
-    .map((c) => c.annualValue)
-    .filter((v): v is number => v != null && v > 0);
-  const totalSpend = parsedValues.reduce((a, b) => a + b, 0);
-  const trackedCount = parsedValues.length;
-
-  const sentAlerts = await db.query.alerts.findMany({
-    where: isNotNull(alertsTable.sentAt),
-    columns: { id: true },
-  });
-
-  return {
-    contractsManaged,
-    alertsSent: sentAlerts.length,
-    totalSpend,
-    trackedCount,
-  };
-}
 
 async function getDeliveryBannerData() {
   const todayStr = new Date().toISOString().split("T")[0];
@@ -81,7 +49,6 @@ export default async function DashboardPage() {
   });
   const contractCount = openContracts.length;
 
-  const metrics = await getDashboardMetrics();
   const { overdueCount, uniqueContracts, channelConfigured } = await getDeliveryBannerData();
   const showDeliveryBanner = overdueCount > 0 && !channelConfigured;
 
@@ -128,9 +95,6 @@ export default async function DashboardPage() {
             )}
           </div>
         )}
-
-        {/* ── Dashboard metrics ────────────────────────────── */}
-        <DashboardMetrics metrics={metrics} />
 
         {/* ── Upload zone ────────────────────────────────── */}
         <div style={{ marginBottom: "24px" }}>

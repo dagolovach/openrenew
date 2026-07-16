@@ -38,3 +38,6 @@ python-service/contracts/
 
 # Git worktrees
 .worktrees/
+
+# Local Claude Code settings
+.claude/settings.local.json

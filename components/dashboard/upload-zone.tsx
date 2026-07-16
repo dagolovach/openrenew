@@ -333,20 +333,6 @@ export default function UploadZone({ contractCount, aiEnabled }: { contractCount
                   · {state.message}
                 </span>
               )}
-              {/* Inline note */}
-              {state.status !== "error" && (
-                <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "13px", color: "#6B7280" }}>
-                  · Upload a single contract PDF. Bulk import from spreadsheets isn&apos;t supported yet —{" "}
-                  <a
-                    href="mailto:hello@localhost"
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ color: "#6B7280", textDecoration: "underline" }}
-                  >
-                    let us know
-                  </a>{" "}
-                  if you need it.
-                </span>
-              )}
               {/* Manual link — right aligned */}
               <Link
                 href="/dashboard/review/new?manual=1"
@@ -409,17 +395,6 @@ export default function UploadZone({ contractCount, aiEnabled }: { contractCount
                 </p>
                 <p style={{ fontSize: "12px", color: "#6B7280", textAlign: "center" }}>
                   or click to browse · PDF only · max 20MB
-                </p>
-                <p style={{ fontSize: "12px", color: "#6B7280", textAlign: "center", marginTop: "6px" }}>
-                  Upload a single contract PDF. Bulk import from spreadsheets isn&apos;t supported yet —{" "}
-                  <a
-                    href="mailto:hello@localhost"
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ color: "#6B7280", textDecoration: "underline" }}
-                  >
-                    let us know
-                  </a>{" "}
-                  if you need it.
                 </p>
                 {state.status === "error" && (
                   <p style={{ fontSize: "12px", color: "#EF4444", marginTop: "8px", textAlign: "center" }}>

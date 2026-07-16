@@ -26,44 +26,6 @@ export const metadata: Metadata = {
     template: '%s — OpenRenew',
   },
   description: 'OpenRenew uses AI to extract key dates from contract PDFs and sends alerts at 60, 30, and 7 days before anything expires or auto-renews. Built for ops and finance teams.',
-  keywords: [
-    'contract renewal tracker',
-    'vendor contract alerts',
-    'SaaS renewal tracker',
-    'contract expiry alerts',
-    'contract management',
-    'vendor renewal reminders',
-    'auto-renewal tracker',
-    'contract deadline alerts',
-  ],
-  authors: [{ name: 'OpenRenew', url: baseUrl }],
-  creator: 'OpenRenew',
-  publisher: 'OpenRenew',
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
-    },
-  },
-  openGraph: {
-    type: 'website',
-    locale: 'en_US',
-    url: baseUrl,
-    siteName: 'OpenRenew',
-    title: 'OpenRenew — Stop getting surprised by vendor renewals',
-    description: 'AI-powered contract renewal tracking for ops and finance teams. Upload once, get alerts before anything expires.',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'OpenRenew — Stop getting surprised by vendor renewals',
-    description: 'AI-powered contract renewal tracking for ops and finance teams.',
-    creator: '@openrenew',
-  },
   icons: {
     icon: [
       { url: '/favicon.svg', type: 'image/svg+xml' },
@@ -71,9 +33,6 @@ export const metadata: Metadata = {
       { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
     ],
     apple: [{ url: '/favicon-180x180.png', sizes: '180x180' }],
-  },
-  alternates: {
-    canonical: baseUrl,
   },
 };
 

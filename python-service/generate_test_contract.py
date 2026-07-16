@@ -26,7 +26,7 @@ SOFTWARE AS A SERVICE AGREEMENT
 This Software as a Service Agreement ("Agreement") is entered into as of 1 March 2024
 ("Effective Date") by and between:
 
-Renewly Ltd, a company incorporated in England and Wales with company number 12345678,
+Meridian Software Ltd, a company incorporated in England and Wales with company number 12345678,
 having its registered office at 10 Tech Street, London, EC1A 1BB ("Provider")
 
 and
@@ -105,7 +105,7 @@ Acme Software Ltd, a company incorporated in England and Wales with company numb
 IN WITNESS WHEREOF, the parties have executed this Agreement as of the date first
 written above.
 
-RENEWLY LTD                         ACME SOFTWARE LTD
+MERIDIAN SOFTWARE LTD               ACME SOFTWARE LTD
 
 Signed: _____________________       Signed: _____________________
 Name:   Sarah Chen                  Name:   James Whitfield
