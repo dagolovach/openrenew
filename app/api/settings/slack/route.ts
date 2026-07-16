@@ -1,6 +1,7 @@
 // app/api/settings/slack/route.ts
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireUser } from '@/lib/auth/session'
+import { setSetting } from '@/lib/db/settings'
 import { z } from 'zod'
 
 export const dynamic = 'force-dynamic'
@@ -10,8 +11,7 @@ const slackSchema = z.object({
 })
 
 export async function PATCH(request: Request) {
-  const sessionClient = await createClient()
-  const { data: { user } } = await sessionClient.auth.getUser()
+  const user = await requireUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const rawBody = await request.json()
@@ -49,10 +49,7 @@ export async function PATCH(request: Request) {
     }
   }
 
-  await sessionClient
-    .from('profiles')
-    .update({ slack_webhook_url: slack_webhook_url ?? null })
-    .eq('id', user.id)
+  await setSetting('slack_webhook_url', slack_webhook_url ?? null)
 
   return NextResponse.json({ ok: true })
 }
