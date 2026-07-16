@@ -389,9 +389,9 @@ export default function ContractList({
   ) : null;
 
   if (sorted.length === 0) {
-    // Only reachable when there's genuinely nothing tracked (mount is gated
-    // on needsReviewContracts.length > 0 || spend.trackedCount > 0 upstream),
-    // so the spend header never co-occurs with this branch in practice.
+    // Active contracts render in the table below this component; when there is
+    // tracked spend but nothing needing review, show only the spend header.
+    if (spend && spend.trackedCount > 0) return spendHeader;
     return (
       <>
         {spendHeader}
@@ -407,7 +407,7 @@ export default function ContractList({
             No contracts tracked yet.
           </div>
           <div style={{ fontSize: "13px", color: "#6B7280", maxWidth: "280px", lineHeight: 1.6 }}>
-            Upload your first contract above and OpenRenew will extract the key dates automatically.
+            Upload your first contract below and OpenRenew will extract the key dates automatically.
           </div>
         </div>
       </>
